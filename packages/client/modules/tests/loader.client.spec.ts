@@ -148,6 +148,35 @@ function bench(
   return { loader, target, fetched, gates }
 }
 
+/** Upper bound comfortably past the loader's whole retry schedule, fallback included. */
+const RETRY_WINDOW_MS = 10_000
+
+/** Yield pending promise callbacks so a started import reaches its first transport call. */
+async function drainMicrotasks(): Promise<void> {
+  for (let hop = 0; hop < 50; hop += 1) await Promise.resolve()
+}
+
+/**
+ * Run a loader interaction and advance a fake clock through the retry delays.
+ * Only `setTimeout` and `clearTimeout` are faked, so promise scheduling and the
+ * scripted transport stay real.
+ */
+async function withRetryClock<T>(run: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    const settled = run().then(
+      (value): { ok: true; value: T } => ({ ok: true, value }),
+      (error: unknown): { ok: false; error: unknown } => ({ ok: false, error }),
+    )
+    await vi.advanceTimersByTimeAsync(RETRY_WINDOW_MS)
+    const outcome = await settled
+    if (!outcome.ok) throw outcome.error
+    return outcome.value
+  } finally {
+    vi.useRealTimers()
+  }
+}
+
 describe('Cordis plugin face', () => {
   it('rejects a Loader whose internal is absent or not a client module system', () => {
     for (const internal of [undefined, { version: 'worker' }]) {
@@ -358,25 +387,37 @@ describe('lazy CJS arrival', () => {
 describe('bundle arrival recovery', () => {
   const single = (id: string): string => comboReference([id], '0')
 
-  it('retries a batch once after a transport failure and shares the retry across its rows', async () => {
+  it('waits before retrying a failed batch and shares the retry across its rows', async () => {
     const b = bench([row('a'), row('b')], { a: () => ({ a: 1 }), b: () => ({ b: 2 }) }, {
       transportFailures: { [APPLICATION_URL]: 1 },
     })
-    const [a, c] = await Promise.all([b.loader.import('a', '', {}), b.loader.import('b', '', {})])
-    expect(a).toEqual({ a: 1 })
-    expect(c).toEqual({ b: 2 })
-    expect(b.fetched).toEqual([APPLICATION_URL, APPLICATION_URL])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const arriving = Promise.all([b.loader.import('a', '', {}), b.loader.import('b', '', {})])
+      await drainMicrotasks()
+      // The retry is not immediate: a plugin install or update is still writing
+      // its artifacts when the first attempt fails.
+      expect(b.fetched).toEqual([APPLICATION_URL])
+      await vi.advanceTimersByTimeAsync(RETRY_WINDOW_MS)
+      const [a, c] = await arriving
+      expect(a).toEqual({ a: 1 })
+      expect(c).toEqual({ b: 2 })
+      expect(b.fetched).toEqual([APPLICATION_URL, APPLICATION_URL])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('falls back to each missing row\'s one-resource URL when the batch keeps failing, without re-fetching the batch per row', async () => {
     const b = bench([row('a'), row('b')], { a: () => ({ a: 1 }), b: () => ({ b: 2 }) }, {
       transportFailures: { [APPLICATION_URL]: 5 },
     })
-    const [a, c] = await Promise.all([b.loader.import('a', '', {}), b.loader.import('b', '', {})])
+    const [a, c] = await withRetryClock(() => Promise.all([b.loader.import('a', '', {}), b.loader.import('b', '', {})]))
     expect(a).toEqual({ a: 1 })
     expect(c).toEqual({ b: 2 })
-    expect(b.fetched.filter(url => url === APPLICATION_URL)).toHaveLength(2)
-    expect(b.fetched.slice(2).sort()).toEqual([single('a'), single('b')].sort())
+    // One attempt plus one per retry delay, shared by both rows.
+    expect(b.fetched.filter(url => url === APPLICATION_URL)).toHaveLength(3)
+    expect(b.fetched.slice(3).sort()).toEqual([single('a'), single('b')].sort())
     expect(b.loader.importError('a')).toBeUndefined()
   })
 
@@ -406,36 +447,46 @@ describe('bundle arrival recovery', () => {
     expect(b.fetched).toEqual([APPLICATION_URL, single('b')])
   })
 
-  it('reports every attempt when the one-resource fallback fails too', async () => {
+  it('reports the last failure of every URL once its retry schedule is exhausted', async () => {
     const b = bench([row('a')], { a: () => ({ a: 1 }) }, {
-      transportFailures: { [APPLICATION_URL]: 2, [single('a')]: 1 },
+      transportFailures: { [APPLICATION_URL]: 3, [single('a')]: 3 },
     })
-    const failure: unknown = await b.loader.import('a', '', {}).then(() => undefined, (error: unknown) => error)
+    const failure: unknown = await withRetryClock(() => b.loader.import('a', '', {}).then(
+      () => undefined,
+      (error: unknown) => error,
+    ))
     if (!(failure instanceof Error)) throw new Error('import resolved')
     expect(failure.message).toContain('could not load "a"')
-    const batchAttempts = failure.message.split(`${APPLICATION_URL}: client-modules: bundle script`).length - 1
-    expect(batchAttempts).toBe(2)
-    expect(failure.message).toContain(`${single('a')}: client-modules: bundle script`)
-    expect(b.fetched).toEqual([APPLICATION_URL, APPLICATION_URL, single('a')])
+    // One line per URL, each naming how many attempts the schedule spent.
+    expect(failure.message).toContain(
+      `${APPLICATION_URL}: client-modules: bundle script ${APPLICATION_URL} failed to load (retried 2 times)`,
+    )
+    expect(failure.message).toContain(
+      `${single('a')}: client-modules: bundle script ${single('a')} failed to load (retried 2 times)`,
+    )
+    expect(b.fetched).toEqual([
+      APPLICATION_URL, APPLICATION_URL, APPLICATION_URL,
+      single('a'), single('a'), single('a'),
+    ])
   })
 
   it('a one-resource URL that fails stays retryable on the next import instead of being remembered as a failed batch', async () => {
     const reloadUrl = comboReference(['a'], '1')
-    const b = bench([row('a')], { a: () => ({ a: 1 }) }, { transportFailures: { [reloadUrl]: 2 } })
+    const b = bench([row('a')], { a: () => ({ a: 1 }) }, { transportFailures: { [reloadUrl]: 3 } })
     expect(await b.loader.import('a', '', {})).toEqual({ a: 1 })
     b.loader.invalidate('a', '1')
-    await expect(b.loader.import('a', '', {})).rejects.toThrow('could not load "a"')
+    await expect(withRetryClock(() => b.loader.import('a', '', {}))).rejects.toThrow('could not load "a"')
     expect(await b.loader.import('a', '', {})).toEqual({ a: 1 })
-    expect(b.fetched).toEqual([APPLICATION_URL, reloadUrl, reloadUrl, reloadUrl])
+    expect(b.fetched).toEqual([APPLICATION_URL, reloadUrl, reloadUrl, reloadUrl, reloadUrl])
   })
 })
 
 describe('import error record', () => {
   it('records the transport failure of a row and clears it once the row imports', async () => {
     const b = bench([row('a')], { a: () => ({ a: 1 }) }, {
-      transportFailures: { [APPLICATION_URL]: 2, [comboReference(['a'], '0')]: 1 },
+      transportFailures: { [APPLICATION_URL]: 3, [comboReference(['a'], '0')]: 3 },
     })
-    await expect(b.loader.import('a', '', {})).rejects.toThrow()
+    await expect(withRetryClock(() => b.loader.import('a', '', {}))).rejects.toThrow()
     expect(b.loader.importError('a')?.message).toContain('could not load "a"')
     expect(b.loader.importError('a/client')).toBe(b.loader.importError('a'))
     expect(await b.loader.import('a', '', {})).toEqual({ a: 1 })
@@ -451,9 +502,9 @@ describe('import error record', () => {
   it('names the failed dependency in the consumer\'s record so a cascade reads as a chain', async () => {
     const b = bench([row('dep'), row('consumer', { inject: ['dep'] })], { dep: () => ({}), consumer: () => ({}) }, {
       registerOnly: { [APPLICATION_URL]: ['consumer'] },
-      transportFailures: { [comboReference(['dep'], '0')]: 1 },
+      transportFailures: { [comboReference(['dep'], '0')]: 3 },
     })
-    await expect(b.loader.import('consumer', '', {})).rejects.toThrow(
+    await expect(withRetryClock(() => b.loader.import('consumer', '', {}))).rejects.toThrow(
       '"consumer" not loaded because dependency "dep" failed: client-modules: could not load "dep"',
     )
     expect(b.loader.importError('consumer')?.message).toContain('dependency "dep" failed')

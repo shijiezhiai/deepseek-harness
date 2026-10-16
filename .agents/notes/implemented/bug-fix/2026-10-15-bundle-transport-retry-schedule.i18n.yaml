@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for 2026-10-15-bundle-transport-retry-schedule.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-15-bundle-transport-retry-schedule.md
+/agent-note-bounded-retry-schedule-for-client-bundle-transports:
+  en: e0235e29d34f683b
+  zh: b02d69162a24058a
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/problem:
+  en: ac24b15f1a704817
+  zh: 06d86480ade60108
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/decision:
+  en: e16f4a4d1eae6cfd
+  zh: 16a92ca4d32a86ab
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/alternatives-considered:
+  en: 351eb322f639e51e
+  zh: 2bc169d778ca1d9d
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/consequences:
+  en: 2d33e2aa9fcf6a60
+  zh: cf999826d8d661f4
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/testing:
+  en: 8a05c86b238d9ed6
+  zh: 81f008c0b66412e3
+/agent-note-bounded-retry-schedule-for-client-bundle-transports/related:
+  en: 59c91a4b3d85864b
+  zh: da112977a3e2266b

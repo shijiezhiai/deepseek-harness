@@ -43,6 +43,23 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Delays between transport attempts of one bundle URL. A `<script>` error event
+ * means nothing executed, so the retry cannot register anything twice, and a
+ * plugin install or update that replaced the package's artifacts serves the URL
+ * unloadably only until its writes settle.
+ */
+const BUNDLE_RETRY_DELAYS_MS = [400, 1_200] as const
+
+/** One URL's transport schedule: attempts made, and the last failure when none succeeded. */
+interface TransportWave {
+  attempts: number
+  failure: string | undefined
+}
+
+/** Resolve after the given delay. */
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
+
 /** Internal module-table key for one package-local chunk. */
 function chunkId(ownerId: string, fileName: string): string {
   return `${ownerId}/${fileName}`
@@ -101,8 +118,10 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private readonly seed: Map<string, unknown>
   private readonly factories = new Map<string, { factory: ClientBundleRegistration['factory']; rev: string | undefined }>()
   private readonly bootstrapIds = new Set<string>()
-  /** In-flight script transport per URL; every row in one batch shares it. */
-  private readonly pendingArrival = new Map<string, Promise<void>>()
+  /** In-flight chunk transport per URL; concurrent dynamic imports of one chunk share it. */
+  private readonly pendingChunks = new Map<string, Promise<void>>()
+  /** Transport schedule in flight per URL, so the rows waiting on it share its delayed retries. */
+  private readonly transportWaves = new Map<string, Promise<TransportWave>>()
   /** Owner generation captured by in-flight chunk requests and advanced on invalidation. */
   private readonly generations = new Map<string, number>()
   /** Single-resource combo URL selected by HMR after invalidating one row. */
@@ -177,16 +196,44 @@ export class ClientModuleSystem implements ClientModuleLoader {
     })
   }
 
-  /** Run one bundle transport per URL; every row waiting on the same URL shares the in-flight request. */
-  private loadShared(url: string): Promise<void> {
-    let transport = this.pendingArrival.get(url)
-    if (transport === undefined) {
-      transport = this.loadBundle(url)
-        .then(() => { this.executedBundleUrls.add(url) })
-        .finally(() => { this.pendingArrival.delete(url) })
-      this.pendingArrival.set(url, transport)
+  /** Run one bundle transport and mark the URL executed once its script has run. */
+  private async loadShared(url: string): Promise<void> {
+    await this.loadBundle(url)
+    this.executedBundleUrls.add(url)
+  }
+
+  /**
+   * Attempt one bundle URL on its retry schedule: the first attempt plus one per
+   * delay in {@link BUNDLE_RETRY_DELAYS_MS}. Transport failures are the only
+   * retryable kind — a `<script>` error event means nothing executed, so a replay
+   * cannot register anything twice.
+   */
+  private async transportWave(url: string): Promise<TransportWave> {
+    let failure: string | undefined
+    let attempts = 0
+    for (const delay of [0, ...BUNDLE_RETRY_DELAYS_MS]) {
+      if (delay > 0) await sleep(delay)
+      attempts += 1
+      try {
+        await this.loadShared(url)
+        return { attempts, failure: undefined }
+      } catch (error) {
+        failure = `${url}: ${describeError(error)}`
+      }
     }
-    return transport
+    return { attempts, failure }
+  }
+
+  /**
+   * Run one URL's schedule once for every row waiting on it: the rows that joined
+   * while it was retrying share the attempts instead of each starting its own.
+   */
+  private sharedWave(url: string): Promise<TransportWave> {
+    const inFlight = this.transportWaves.get(url)
+    if (inFlight !== undefined) return inFlight
+    const wave = this.transportWave(url).finally(() => { this.transportWaves.delete(url) })
+    this.transportWaves.set(url, wave)
+    return wave
   }
 
   /**
@@ -194,15 +241,17 @@ export class ClientModuleSystem implements ClientModuleLoader {
    * arrival). A batch script is one classic script that registers every
    * package in sequence, and {@link register} rejects a second registration,
    * so the two failure kinds differ: a transport failure (`error` event, nothing
-   * executed) is retried once on the same URL; a script that loaded without
-   * registering this row (a parse error registered nothing, or a runtime throw
-   * stopped it after registering others) is never re-executed, because a replay
-   * would stop again at the first duplicate registration; that holds even when
-   * the row that first imports from the batch is one it did register, because
-   * every executed batch URL is remembered. Either way the row then falls back
-   * to its own one-resource URL, which the Host serves for every package, so one
-   * failed batch costs at most three requests per missing row and never fails
-   * the rows that were registered.
+   * executed) is attempted again after each delay in
+   * {@link BUNDLE_RETRY_DELAYS_MS}, and the rows waiting on that URL share those
+   * attempts; a script that loaded without registering this row (a parse error
+   * registered nothing, or a runtime throw stopped it after registering others)
+   * is never re-executed, because a replay would stop again at the first
+   * duplicate registration; that holds even when the row that first imports from
+   * the batch is one it did register, because every executed batch URL is
+   * remembered. Either way the row then falls back to its own one-resource URL,
+   * which the Host serves for every package, under the same retry schedule, so
+   * one failed batch costs at most three requests per URL and never fails the
+   * rows that were registered.
    */
   private async arrive(row: BootModuleRow): Promise<void> {
     const { id } = row
@@ -211,16 +260,19 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const preferred = reload?.url ?? row.initialUrl
     const fallback = reload === undefined && row.url !== preferred ? row.url : undefined
     const failures: string[] = []
+    // Attempt one URL for this row: its shared transport schedule, then this
+    // row's registration check. A script that ran without registering this row
+    // is never re-executed, because a replay would stop again at its own first
+    // duplicate registration.
     const attempt = async (url: string): Promise<'registered' | 'transport-failed' | 'not-registered'> => {
-      try {
-        await this.loadShared(url)
-      } catch (error) {
-        failures.push(`${url}: ${describeError(error)}`)
-        return 'transport-failed'
+      const wave = await this.sharedWave(url)
+      if (wave.failure === undefined) {
+        if (this.factories.has(id)) return 'registered'
+        failures.push(`${url}: loaded without registering "${id}" via __ModuleLoader__.load`)
+        return 'not-registered'
       }
-      if (this.factories.has(id)) return 'registered'
-      failures.push(`${url}: loaded without registering "${id}" via __ModuleLoader__.load`)
-      return 'not-registered'
+      failures.push(`${wave.failure} (retried ${wave.attempts - 1} times)`)
+      return 'transport-failed'
     }
     let outcome: Awaited<ReturnType<typeof attempt>> = 'transport-failed'
     if (this.failedBundleUrls.has(preferred)) {
@@ -234,7 +286,6 @@ export class ClientModuleSystem implements ClientModuleLoader {
       this.failedBundleUrls.add(preferred)
     } else {
       outcome = await attempt(preferred)
-      if (outcome === 'transport-failed') outcome = await attempt(preferred)
       // Only a batch URL is remembered: a one-resource URL has no fallback and
       // stays retryable on the next import, as before.
       if (outcome !== 'registered' && fallback !== undefined) this.failedBundleUrls.add(preferred)
@@ -359,10 +410,10 @@ export class ClientModuleSystem implements ClientModuleLoader {
       /* v8 ignore next -- the final fallback needs an impossible graph-owned factory with no recorded revision. */
       const revision = this.factories.get(ownerId)?.rev ?? this.reloadTargets.get(ownerId)?.rev ?? row.rev
       const url = chunkUrl(row, fileName, revision)
-      let transport = this.pendingArrival.get(url)
+      let transport = this.pendingChunks.get(url)
       if (transport === undefined) {
-        transport = this.loadBundle(url).finally(() => { this.pendingArrival.delete(url) })
-        this.pendingArrival.set(url, transport)
+        transport = this.loadBundle(url).finally(() => { this.pendingChunks.delete(url) })
+        this.pendingChunks.set(url, transport)
       }
       await transport
       if ((this.generations.get(ownerId) ?? 0) !== generation) {
