@@ -39,12 +39,20 @@ export const CompactionItem = memo(function CompactionItem({
   const expandable = node.summary !== null
   const open = expandable && expanded
   const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null
-    ? t('message.compaction.completed', {
-      items: node.shadowedItemCount,
-      tokens: node.shadowedTokenCount,
-    })
+    ? node.cacheHitPercent === null
+      ? t('message.compaction.completed', {
+        items: node.shadowedItemCount,
+        tokens: node.shadowedTokenCount,
+      })
+      : t('message.compaction.completedWithCache', {
+        items: node.shadowedItemCount,
+        tokens: node.shadowedTokenCount,
+        percent: node.cacheHitPercent,
+      })
     : fallbackSummary
       ?? (expandable ? t('message.compaction.expand') : t('message.compaction.unavailable'))
+  const label = titleLabel(node, title, t)
+  const warn = node.windowNumber !== null && node.windowNumber >= 2
   return (
     <div className={css.compactionRow}>
       <button
@@ -65,12 +73,25 @@ export const CompactionItem = memo(function CompactionItem({
             {open ? <IconChevronDownOutlineRegular /> : <IconChevronRightOutlineRegular />}
           </span>
         </span>
-        <span className={css.compactionTitle}>{title ?? t('message.compaction')}</span>
+        <span className={css.compactionTitle}>{label}</span>
         <span className={css.compactionSep} aria-hidden />
         <span className={css.compactionSummary}>{summary}</span>
       </button>
+      {warn && <p className={css.compactionWarning} role="note">{t('message.compaction.warning')}</p>}
       {open && node.summary !== null
         && <div className={css.compactionBody}><MarkdownText text={node.summary} labels={labels} /></div>}
     </div>
   )
 })
+
+/** The marker's leading label: an explicit command title, else window-qualified copy. */
+function titleLabel(
+  node: CompactionSummaryNode,
+  title: string | undefined,
+  t: CompactionItemProps['t'],
+): string {
+  if (title !== undefined) return title
+  return node.windowNumber !== null
+    ? t('message.compaction.window', { number: node.windowNumber })
+    : t('message.compaction')
+}

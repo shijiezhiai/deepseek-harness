@@ -408,7 +408,8 @@ export function normalizeSessionLog(
         }
       }
     }
-    if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
+    if ((record.type === 'hook/result' || record.type === 'compaction/summary')
+      && record.data !== null && typeof record.data === 'object') {
       const data = record.data as Record<string, unknown>
       if ('durationMs' in data) data.durationMs = 0
     }

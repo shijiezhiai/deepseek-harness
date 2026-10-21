@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-19-compaction-observability-hooks-and-cjk-metering.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-19-compaction-observability-hooks-and-cjk-metering.md
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering:
+  en: dbf74d448641a658
+  zh: f4341885f70a15e6
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/problem:
+  en: 3d9e283a11824b6d
+  zh: abe3a0c58e452abd
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/decision:
+  en: a15c7c13f167e5ac
+  zh: a15c7c13f167e5ac
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/decision/1-telemetry-on-the-committed-transaction:
+  en: 7a0738660d5b2cb2
+  zh: 9cfa5e2f196f1ccf
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/decision/2-round-hooks-as-a-second-consumer-facing-extensibility-point:
+  en: 00870cb7234afe0c
+  zh: 3e6bcce3b421d614
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/decision/3-cjk-aware-token-estimation:
+  en: 130bb0650ccbdd3f
+  zh: eabccc41c5a55792
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/alternatives-considered:
+  en: d34a95e21d956648
+  zh: e827a3800c240dd6
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/consequences:
+  en: fe43a358c8efcb0c
+  zh: 9c47d6ece22afd5c
+/agent-note-compaction-observability-round-hooks-and-cjk-aware-metering/testing:
+  en: 2432c63d76f1962f
+  zh: c14f2dfe8f113f73

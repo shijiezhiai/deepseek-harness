@@ -1442,6 +1442,8 @@ describe('TrajectoryView state', () => {
       summaryEventSeq: null,
       shadowedItemCount: null,
       shadowedTokenCount: null,
+      windowNumber: null,
+      cacheHitPercent: null,
     })), ...visibleNodes]
     const requests: readonly RequestView[] = [{
       purpose: 'assistant', startSeq: 1, resultSeq: 2, startedAt: 1, completedAt: 2,

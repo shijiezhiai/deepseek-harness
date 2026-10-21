@@ -13,8 +13,8 @@
 | 事件 | 载荷 | 作用 |
 |---|---|---|
 | `compaction/start` | `{ turn }` | 获取日志记录的锁；数字标识尚未结束的自动轮次，`null` 标识独立手动尝试 |
-| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 Agent Note）；未带标记的 `rawOutput` 并不能判定调用路径 |
-| `compaction/end` | `{ turn, error? }` | 使用相同的数字或 `null` 归属值释放锁（`error` 记录失败尝试） |
+| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, windowNumber?, measuredBeforeTokens?, measuredAfterTokens?, durationMs?, provider, model, maxTokens?, usage? }` | 安全摘要投影、可选的完整提供方输出与 usage、生成结果时恰好通过此上下文的 `ctx.llm.stream()` 发起一次调用所带的 `llmStreamCall: true` 标记（此时必须提供完整的 `rawOutput`）、被遮蔽的 surface 边界对（`start`/`end` seq——位置跨度，而非数值区间）、按 surface 顺序排列的被遮蔽 seq、估算 token 数、每会话压缩代次序号（`windowNumber`，从 1 起且只计已提交的压缩）、后端在追加时已同时取得前后两个数字则一并给出计量占用（basic 后端在此只记录替换前的 `measuredBeforeTokens`，把 `measuredAfterTokens` 留给 `compaction/end`）与事务墙钟耗时 `durationMs`，以及摘要调用的 envelope（`provider`、`model`，若有生成上限则还包括该上限）——写入日志后，该一次性请求可由日志 + 代码重建（见可重建性 Agent Note）；未带标记的 `rawOutput` 并不能判定调用路径 |
+| `compaction/end` | `{ turn, error?, measuredAfterTokens? }` | 使用相同的数字或 `null` 归属值释放锁（`error` 记录失败尝试）；未记录失败的关闭还携带替换后的计量占用，与 summary 的 `measuredBeforeTokens` 配对即可汇报实际缩减 |
 
 锁括住**整个**操作：先追加 `compaction/start`，然后执行摘要生成、写入 `compaction/summary` 记录与 `user/message` 替换，最后才追加 `compaction/end`。最后释放锁意味着操作中途崩溃会表现为可检测的遗留锁（有 `compaction/start` 而无匹配的 `compaction/end`），而非一个虚假声称压缩已完成的 `compaction/end`。
 
@@ -69,6 +69,19 @@ interface CompactionResult {
   shadowedSeqs: SessionSeq[]
   /** Estimated token count of the shadowed content. */
   shadowedTokenCount: number
+  /**
+   * Per-session compaction window ordinal, 1-based, mirrored from the
+   * `compaction/summary` event's `windowNumber` when the backend derived one.
+   */
+  windowNumber?: number
+  /**
+   * Meter route-priced overall footprint immediately after the replacement
+   * committed, provided by the basic backend. Together with the
+   * `compaction/summary` event's measuredBeforeTokens it reports the realized
+   * reduction; absent for results produced by model-independent backends that
+   * do not measure.
+   */
+  measuredAfterTokens?: number
 }
 ```
 
@@ -147,6 +160,16 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.
 
 ```ts cordis-catalog
+/**
+ * Register one round hook. Hooks are collected in registration order; a
+ * `before` returning `Stop` aborts the round before any durable marker or
+ * mutation, and later hooks are not consulted. `after` observes every
+ * committed round, successful or not, with the result (or `null`).
+ * @param hook - round interception point.
+ * @returns a disposer unregistering this hook.
+ */
+onRound(hook: CompactionRoundHook): () => void
+
 /**
  * Consider automatic compaction for one explicit trigger. Pressure policy
  * uses the latest durable routed request, while context-overflow policy may

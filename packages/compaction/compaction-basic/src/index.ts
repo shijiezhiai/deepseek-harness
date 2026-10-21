@@ -7,7 +7,10 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
+import { randomUUID } from 'node:crypto'
+import type { CompactionRoundContext } from '@deepseek-ai/dsh-compaction'
 import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
@@ -65,6 +68,21 @@ function routedTarget(
 function reservedCompletionTokens(agent: Agent, defaultMaxTokens: number | undefined): number {
   const configured = agent.session.requestHeader()?.config.maxTokens
   return configured ?? defaultMaxTokens ?? 0
+}
+
+/**
+ * Return a fresh round context carrying the committed result's measured-after
+ * footprint. The `before` hook must see the same identity, so the object is
+ * only replaced when the result actually reports a measurement.
+ */
+function noteRoundAfter(
+  round: CompactionRoundContext,
+  result: CompactionResult | null,
+): CompactionRoundContext {
+  const measuredAfterTokens = result?.measuredAfterTokens
+  return measuredAfterTokens === undefined
+    ? round
+    : { ...round, measuredAfterTokens }
 }
 
 /** Resolve the conversation target used to select an optional policy override. */
@@ -298,7 +316,16 @@ export class BasicCompactionEngine extends CompactionEngine {
       }
       const range = selectCompactableRange(agent.session, measurement, 0)
       if (range === null) return null
-      return this.compactRegion(range.start, range.end, agent, signal)
+      const overflowRound: CompactionRoundContext = {
+        compactionId: CompactionId(randomUUID()),
+        kind: 'automatic',
+        trigger,
+        measuredBeforeTokens: measurement.totalTokens,
+      }
+      if (!await this.runBeforeRound(overflowRound)) return null
+      const overflowResult = await this.compactRegion(range.start, range.end, agent, signal)
+      await this.runAfterRound(noteRoundAfter(overflowRound, overflowResult), overflowResult)
+      return overflowResult
     }
 
     const info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
@@ -335,7 +362,16 @@ export class BasicCompactionEngine extends CompactionEngine {
         /* v8 ignore next -- paired with the defensive post-success branch above. */
         break
       }
+      // Every attempt is its own round so hooks observe and may stop each one.
+      const pressureRound: CompactionRoundContext = {
+        compactionId: CompactionId(randomUUID()),
+        kind: 'automatic',
+        trigger,
+        measuredBeforeTokens: measurement.totalTokens,
+      }
+      if (!await this.runBeforeRound(pressureRound)) return result
       result = await this.compactRegion(range.start, range.end, agent, signal)
+      await this.runAfterRound(noteRoundAfter(pressureRound, result), result)
       measurement = meter.measure(agent.session)
       if (measurement.totalTokens < spec.thresholdTokens) return result
     }
@@ -397,7 +433,13 @@ export class BasicCompactionEngine extends CompactionEngine {
             0,
           )
           if (range === null) return null
-          return await compactSurfaceRegion(
+          const manualRound: CompactionRoundContext = {
+            compactionId: CompactionId(randomUUID()),
+            kind: 'manual',
+            measuredBeforeTokens: this.ctx.tokenMeter.measure(agent.session).totalTokens,
+          }
+          if (!await this.runBeforeRound(manualRound)) return null
+          const manualResult = await compactSurfaceRegion(
             this.regionDependencies(),
             agent.session,
             range.start,
@@ -413,6 +455,8 @@ export class BasicCompactionEngine extends CompactionEngine {
             },
             operationSignal,
           )
+          await this.runAfterRound(noteRoundAfter(manualRound, manualResult), manualResult)
+          return manualResult
         } catch (error: unknown) {
           if (agentSignal.aborted && operationSignal.reason === agentSignal.reason) {
             throw new ManualCompactionError(

@@ -38,6 +38,15 @@ declare module '@deepseek-ai/dsh-session/types' {
       shadowedRange: { start: SessionSeq; end: SessionSeq }
       shadowedSeqs: SessionSeq[]
       shadowedTokenCount: number
+      /**
+       * Per-session compaction window ordinal, 1-based: how many landed
+       * summaries precede this one, plus one. Counts only successful
+       * summarizing compactions — failed rounds and model-free `compaction/prune`
+       * replacements never consume a window. The basic backend derives it from
+       * the append-only log, so it is reconstructable and stable across
+       * replays; model-independent backends may omit it.
+       */
+      windowNumber?: number
       /** The provider route that wrote the summary. */
       provider: string
       /**
@@ -51,6 +60,21 @@ declare module '@deepseek-ai/dsh-session/types' {
       maxTokens?: number
       /** Provider-reported token usage for the summarization request, when emitted. */
       usage?: TokenUsage
+      /**
+       * Meter route-priced totals immediately before and after the transaction's
+       * committed replacement. The before cost includes the span being shadowed;
+       * the after cost is measured on the new surface, so the difference is the
+       * compaction's realized footprint reduction. Present only when both
+       * measurements were taken at the exact committed generation.
+       */
+      measuredBeforeTokens?: number
+      measuredAfterTokens?: number
+      /**
+       * Wall-clock duration of the completion transaction from its durable
+       * `compaction/start` to its successful close, in milliseconds. Present
+       * only for a transaction that closed without a recorded failure.
+       */
+      durationMs?: number
     } & (
       | {
         /** Complete provider output before the backend's safe summary projection. */
@@ -69,7 +93,22 @@ declare module '@deepseek-ai/dsh-session/types' {
      * Marks the end of a compaction — log-only, releases the lock. Its owner
      * matches `compaction/start`; `error` records an unsuccessful attempt.
      */
-    'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
+    'compaction/end': {
+      compactionId: CompactionId
+      sourceCommandId?: CommandId
+      turn: number | null
+      error?: string
+      /**
+       * Meter route-priced overall footprint immediately after the committed
+       * replacement, present only when the transaction closed without a
+       * recorded failure. Measured on the post-replacement surface after
+       * `compaction/summary` and the replacement committed, so paired with the
+       * summary event's measuredBeforeTokens it reports the realized
+       * reduction of this compaction. The `CompactionResult` returned to the
+       * caller also carries it.
+       */
+      measuredAfterTokens?: number
+    }
     /**
      * Shadow price of one model-free prune replacement — log-only, no
      * surfaceOp. The shared shadow-price protocol: a surface `replace` event
@@ -117,4 +156,17 @@ export interface CompactionResult {
   shadowedSeqs: SessionSeq[]
   /** Estimated token count of the shadowed content. */
   shadowedTokenCount: number
+  /**
+   * Per-session compaction window ordinal, 1-based, mirrored from the
+   * `compaction/summary` event's `windowNumber` when the backend derived one.
+   */
+  windowNumber?: number
+  /**
+   * Meter route-priced overall footprint immediately after the replacement
+   * committed, provided by the basic backend. Together with the
+   * `compaction/summary` event's measuredBeforeTokens it reports the realized
+   * reduction; absent for results produced by model-independent backends that
+   * do not measure.
+   */
+  measuredAfterTokens?: number
 }

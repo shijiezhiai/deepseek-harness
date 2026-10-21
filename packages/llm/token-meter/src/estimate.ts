@@ -1,7 +1,7 @@
 /**
- * Fixed-density heuristic token pricing shared by the meter service and the
- * pure context-breakdown projection, so both surfaces price identical content
- * to identical numbers.
+ * Class-aware density heuristic token pricing shared by the meter service and
+ * the pure context-breakdown projection, so both surfaces price identical
+ * content to identical numbers.
  *
  * @module @deepseek-ai/dsh-token-meter/estimate
  */
@@ -12,6 +12,49 @@ import type { EpochHeader } from '@deepseek-ai/dsh-session'
 /** Fixed text-density estimate used until exact tokenization is needed. */
 const CHARS_PER_TOKEN = 4
 
+/**
+ * Tokens per CJK ideograph or CJK punctuation character. A Chinese character
+ * commonly tokenizes to about one token, where the fixed Latin density
+ * charges it a quarter of one; the split keeps mixed messages priced by
+ * character class instead of one run rate.
+ */
+const CJK_CHARS_PER_TOKEN = 1
+
+/** CJK Unified Ideographs (U+4E00–U+9FFF) plus common CJK punctuation. */
+const CJK_IDEOGRAPH = /\p{Script=Han}/u
+const CJK_PUNCTUATION = /[\u3000-\u303F\uFF01-\uFF60]/u
+
+/** Tokens for one text run under the given chars-per-token density. */
+function runTokens(length: number, charsPerToken: number): number {
+  return Math.ceil(length / charsPerToken)
+}
+
+/**
+ * Price a text run by character class: CJK ideographs and CJK punctuation cost
+ * {@link CJK_CHARS_PER_TOKEN} each, everything else the fixed Latin
+ * {@link CHARS_PER_TOKEN}. A contiguous non-CJK run prices exactly as the
+ * single-rate rule did, so Latin-only text is unchanged.
+ * @param text - text to price without mutation.
+ * @returns heuristic tokens for the run.
+ */
+export function estimateTextTokens(text: string): number {
+  let total = 0
+  let latinRun = 0
+  let cjkRun = 0
+  for (const character of text) {
+    if (CJK_IDEOGRAPH.test(character) || CJK_PUNCTUATION.test(character)) {
+      total += runTokens(latinRun, CHARS_PER_TOKEN)
+      latinRun = 0
+      cjkRun += CJK_CHARS_PER_TOKEN
+      continue
+    }
+    total += runTokens(cjkRun, CJK_CHARS_PER_TOKEN)
+    cjkRun = 0
+    latinRun += 1
+  }
+  return total + runTokens(latinRun, CHARS_PER_TOKEN) + runTokens(cjkRun, CJK_CHARS_PER_TOKEN)
+}
+
 /** Per-block structural overhead for JSON framing and type tags. */
 const BLOCK_OVERHEAD = 4
 
@@ -20,7 +63,7 @@ export const ROLE_OVERHEAD = 4
 
 /**
  * Structural JSON price of one block outside the typed pricing arms: the
- * fixed heuristic for merge-extended blocks and for image references, whose
+ * class-aware heuristic for merge-extended blocks and for image references, whose
  * request price is route-owned rather than fixed. Image offload marks do not
  * change this reference-only heuristic; route pricing owns their placeholders.
  * @param block - block to price without mutation.
@@ -29,13 +72,13 @@ export const ROLE_OVERHEAD = 4
 export function estimateStructuralBlock(block: ContentBlock): number {
   if (block.type === 'image') {
     const { offloaded: _offloaded, ...reference } = block
-    return BLOCK_OVERHEAD + Math.ceil(JSON.stringify(reference).length / CHARS_PER_TOKEN)
+    return BLOCK_OVERHEAD + estimateTextTokens(JSON.stringify(reference))
   }
-  return BLOCK_OVERHEAD + Math.ceil(JSON.stringify(block).length / CHARS_PER_TOKEN)
+  return BLOCK_OVERHEAD + estimateTextTokens(JSON.stringify(block))
 }
 
 /**
- * Price content blocks recursively under the fixed density heuristic.
+ * Price content blocks recursively under the class-aware density heuristic.
  * @param blocks - content blocks to price without mutation.
  * @returns heuristic tokens including per-block structural overhead.
  */
@@ -45,17 +88,17 @@ export function estimateContent(blocks: readonly ContentBlock[]): number {
     switch (block.type) {
       case 'text':
       case 'reasoning':
-        tokens += Math.ceil(block.text.length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
+        tokens += estimateTextTokens(block.text) + BLOCK_OVERHEAD
         break
       case 'tool-call':
-        tokens += Math.ceil(block.name.length / CHARS_PER_TOKEN)
-          + Math.ceil(block.arguments.length / CHARS_PER_TOKEN)
+        tokens += estimateTextTokens(block.name)
+          + estimateTextTokens(block.arguments)
           + BLOCK_OVERHEAD
         break
       default:
         // ContentBlockMap is merge-extensible; unknown blocks (and image
         // references, whose request price is route-owned) retain a
-        // conservative structural JSON price under the fixed heuristic.
+        // conservative structural JSON price under the class-aware heuristic.
         tokens += estimateStructuralBlock(block)
     }
   }
@@ -72,17 +115,17 @@ export function estimateContent(blocks: readonly ContentBlock[]): number {
  */
 export function estimateSystemMessage(message: Message): number {
   if (message.content.length === 0) return 0
-  let characters = 0
+  let tokens = 0
   for (const block of message.content) {
-    characters += block.type === 'text' ? block.text.length : JSON.stringify(block).length
+    tokens += block.type === 'text' ? estimateTextTokens(block.text) : estimateTextTokens(JSON.stringify(block))
   }
-  return Math.ceil(characters / CHARS_PER_TOKEN) + ROLE_OVERHEAD
+  return tokens + ROLE_OVERHEAD
 }
 
 /**
  * Heuristically price one model-visible message.
  * @param message - message to price without mutation.
- * @returns content and role-framing tokens under the fixed heuristic; a
+ * @returns content and role-framing tokens under the class-aware heuristic; a
  *   system-role message prices as {@link estimateSystemMessage}.
  */
 export function estimateMessage(message: Message): number {
@@ -98,5 +141,5 @@ export function estimateMessage(message: Message): number {
  */
 export function estimateToolsTokens(header: EpochHeader | undefined): number {
   if (header?.tools === undefined || header.tools.length === 0) return 0
-  return Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD
+  return estimateTextTokens(JSON.stringify(header.tools)) + BLOCK_OVERHEAD
 }

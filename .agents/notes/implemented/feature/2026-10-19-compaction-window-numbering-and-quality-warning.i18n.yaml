@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-19-compaction-window-numbering-and-quality-warning.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-19-compaction-window-numbering-and-quality-warning.md
+/agent-note-compaction-window-numbering-and-quality-warning:
+  en: a41b1afedffa5cbf
+  zh: 9f574ffe68b46aad
+/agent-note-compaction-window-numbering-and-quality-warning/problem:
+  en: 7a35092a11a76cf5
+  zh: d066bb03d24fd5a4
+/agent-note-compaction-window-numbering-and-quality-warning/decision:
+  en: a15c7c13f167e5ac
+  zh: a15c7c13f167e5ac
+/agent-note-compaction-window-numbering-and-quality-warning/decision/1-a-per-session-replayable-window-ordinal-on-the-summary-event:
+  en: 9b95f4ca04514380
+  zh: 88bb25d542d34c02
+/agent-note-compaction-window-numbering-and-quality-warning/decision/2-the-client-numbers-generations-and-warns-from-generation-two:
+  en: 1c00f71ecefee08d
+  zh: 40d32a2ab1c95bfa
+/agent-note-compaction-window-numbering-and-quality-warning/decision/3-provenance-anchor-for-the-ecosystem:
+  en: 54d60f846e028a18
+  zh: 34398577f97c1451
+/agent-note-compaction-window-numbering-and-quality-warning/alternatives-considered:
+  en: 1eff5f200eb54018
+  zh: 6411fe1177acdc1b
+/agent-note-compaction-window-numbering-and-quality-warning/consequences:
+  en: 48d3bdc575ceaad4
+  zh: 0870bd3b5ffc2840
+/agent-note-compaction-window-numbering-and-quality-warning/testing:
+  en: a26378cbe7686988
+  zh: 250fa384fab9d9fc

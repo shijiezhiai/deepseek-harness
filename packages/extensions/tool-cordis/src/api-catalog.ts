@@ -679,6 +679,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.',
     methods: [
       {
+        signature: 'onRound(hook: CompactionRoundHook): () => void',
+        description: 'Register one round hook. Hooks are collected in registration order; a `before` returning `Stop` aborts the round before any durable marker or mutation, and later hooks are not consulted. `after` observes every committed round, successful or not, with the result (or `null`).',
+        parameters: [{ name: 'hook', description: 'round interception point.' }],
+        returns: 'a disposer unregistering this hook.',
+      },
+      {
         signature: 'abstract compactIfNeeded( agent: CompactionAgentContext, trigger: CompactionTrigger, signal: AbortSignal, ): Promise<CompactionResult | null>',
         description: 'Consider automatic compaction for one explicit trigger. Pressure policy uses the latest durable routed request, while context-overflow policy may force a useful balanced reduction even below the normal threshold. Return `null` when no safe range can be compacted. A single oversized retained unit or request envelope cannot be repaired through surface compaction.',
         parameters: [{ name: 'agent', description: 'agent context owning the session surface and routing options.' }, { name: 'trigger', description: 'normal pressure or provider-confirmed context overflow.' }, { name: 'signal', description: 'cancellation signal; model-backed implementations must forward it.' }],
@@ -5067,7 +5073,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CompactionResult',
-    declaration: 'export interface CompactionResult {\n    compactionId: CompactionId;\n    sourceCommandId?: CommandId;\n    startSeq: SessionSeq;\n    summarySeq: SessionSeq;\n    endSeq: SessionSeq;\n    summary: ContentBlock[];\n    shadowedRange: {\n        start: SessionSeq;\n        end: SessionSeq;\n    };\n    shadowedSeqs: SessionSeq[];\n    shadowedTokenCount: number;\n}',
+    declaration: 'export interface CompactionResult {\n    compactionId: CompactionId;\n    sourceCommandId?: CommandId;\n    startSeq: SessionSeq;\n    summarySeq: SessionSeq;\n    endSeq: SessionSeq;\n    summary: ContentBlock[];\n    shadowedRange: {\n        start: SessionSeq;\n        end: SessionSeq;\n    };\n    shadowedSeqs: SessionSeq[];\n    shadowedTokenCount: number;\n    windowNumber?: number;\n    measuredAfterTokens?: number;\n}',
+  },
+  {
+    name: 'CompactionRoundContext',
+    declaration: 'export interface CompactionRoundContext {\n    compactionId: CompactionId;\n    kind: \'automatic\' | \'manual\';\n    trigger?: CompactionTrigger;\n    measuredBeforeTokens?: number;\n    measuredAfterTokens?: number;\n}',
+  },
+  {
+    name: 'CompactionRoundHook',
+    declaration: 'export interface CompactionRoundHook {\n    before(round: CompactionRoundContext): Promise<CompactionRoundOutcome> | CompactionRoundOutcome;\n    after?(round: CompactionRoundContext, result: CompactionResult | null): void | Promise<void>;\n}',
+  },
+  {
+    name: 'CompactionRoundOutcome',
+    declaration: 'export type CompactionRoundOutcome = \'continue\' | \'stop\';',
   },
   {
     name: 'CompactionTrigger',

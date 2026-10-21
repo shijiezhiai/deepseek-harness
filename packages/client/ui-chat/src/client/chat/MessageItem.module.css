@@ -195,6 +195,18 @@
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
+/* Quality note shown once compaction has repeated: early history is only a
+   summary now, so the model may drift on it. Amber label, never a surface row. */
+.compactionWarning {
+  margin: 2px 0 0 calc(22px + var(--dsh-content-font-delta, 0px));
+  padding: 6px 8px;
+  color: var(--dsw-alias-state-warn-label);
+  background: var(--dsw-alias-state-warn-tertiary);
+  border-radius: 6px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
 .retryRow {
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsh-content-font-size-secondary, 13px);

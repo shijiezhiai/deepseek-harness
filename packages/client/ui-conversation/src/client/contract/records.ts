@@ -204,6 +204,14 @@ export interface CompactionSummaryNode {
   shadowedItemCount: number | null
   /** Estimated token price of the replaced items, or null when the summary event is unavailable or malformed. */
   shadowedTokenCount: number | null
+  /** Per-session compaction ordinal, 1-based, or null when the summary event is
+   *  unavailable, malformed, or predates window numbering. */
+  windowNumber: number | null
+  /** Display-ready share of the summarization call's prompt billed from the
+   *  provider's warm cache, computed at extraction time over the summary
+   *  event's disjoint usage (rounding like formatCacheHitPercent: a partial
+   *  hit never shows as 100). Null when the event carries no usable usage. */
+  cacheHitPercent: string | null
 }
 
 /**

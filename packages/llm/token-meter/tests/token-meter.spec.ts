@@ -158,6 +158,10 @@ describe('TokenMeter pricing', () => {
     }))
     expect(estimated).toBeGreaterThan(30)
     expect(service.estimateMessage(textMessage('abcd'))).toBe(9)
+    // Class-aware density: a CJK character stands alone per token, while a
+    // Latin run keeps the fixed 4-char-per-token rule untouched. The message
+    // total adds the per-block and per-message framing overheads.
+    expect(service.estimateMessage(textMessage('中文'))).toBe(2 + 4 + 4)
   })
 
   it('returns a detached deeply immutable empty measurement', () => {

@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-commands/types'
 import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { ManualCompactionChatData } from '../contract/chat-nodes.ts'
 import { chatNode } from './common.ts'
+import { formatCacheHitPercent } from '../chat/token-format.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -102,6 +103,8 @@ function compactSummary(match: ConversationMatch | undefined, checkpoint: Conver
   let summary: string | null = null
   let shadowedItemCount: number | null = null
   let shadowedTokenCount: number | null = null
+  let windowNumber: number | null = null
+  let cacheHitPercent: string | null = null
   if (match?.event.type === 'compaction/summary') {
     const data = match.event.data
     if (Array.isArray(data.summary)) {
@@ -118,6 +121,20 @@ function compactSummary(match: ConversationMatch | undefined, checkpoint: Conver
       && data.shadowedTokenCount >= 0
       ? data.shadowedTokenCount
       : null
+    windowNumber = Number.isSafeInteger(data.windowNumber)
+      && (data.windowNumber as number) >= 1
+      ? data.windowNumber as number
+      : null
+    const usage = data.usage
+    const inputTokens = usage?.inputTokens
+    const cacheRead = usage?.cacheReadTokens
+    const cacheWrite = usage?.cacheWriteTokens
+    cacheHitPercent = usage !== undefined && Number.isSafeInteger(inputTokens) && (inputTokens as number) >= 0
+      ? formatCacheHitPercent(
+        cacheRead ?? 0,
+        (inputTokens as number) + (cacheWrite ?? 0) + (cacheRead ?? 0),
+      )
+      : null
   }
   return {
     kind: 'compaction',
@@ -127,6 +144,8 @@ function compactSummary(match: ConversationMatch | undefined, checkpoint: Conver
     summaryEventSeq: match?.event.seq ?? null,
     shadowedItemCount,
     shadowedTokenCount,
+    windowNumber,
+    cacheHitPercent,
   }
 }
 

@@ -45,6 +45,8 @@ interface PreparedCompaction extends SurfaceSelection {
   readonly shadowedTokenCount: number
   /** Route-priced total of the selected span; the shrink comparison's unit. */
   readonly shadowedRouteTokenCount: number
+  /** Per-session window ordinal for the summary about to land, 1-based. */
+  readonly windowNumber: number
   readonly input: SummarizationInput
 }
 
@@ -155,6 +157,32 @@ export function selectCompactableRange(
 }
 
 /**
+ * Derive the next per-session compaction window ordinal from the append-only
+ * log: one plus the largest `windowNumber` already landed, or 1 when no
+ * summarizing compaction has committed. Counts only successful summaries, so a
+ * failed or crashed round never consumes a window, and a model-free
+ * `compaction/prune` replacement does not either.
+ * @param events - the session's complete event log.
+ * @returns the next 1-based window ordinal for a summary about to commit.
+ */
+export function nextCompactionWindowNumber(events: readonly SessionEvent[]): number {
+  let maxWindow = 0
+  for (const event of events) {
+    if (event.type !== 'compaction/summary') continue
+    const current = event.data.windowNumber
+    if (current !== undefined && current > maxWindow) maxWindow = current
+  }
+  return maxWindow + 1
+}
+
+/** Snake-case free telemetry carried by the completed summary record. */
+interface CompactionTelemetry {
+  readonly measuredBeforeTokens?: number
+  readonly measuredAfterTokens?: number
+  readonly durationMs?: number
+}
+
+/**
  * Run the single compaction transaction over one selected positional span.
  * Selection and validation are read-only. Idle/log validation and
  * `compaction/start` are synchronously adjacent, so the durable opening marker is
@@ -170,6 +198,7 @@ export function selectCompactableRange(
  * @param signal - optional summarization cancellation signal.
  * @returns the successful durable compaction result.
  */
+
 export async function compactSurfaceRegion(
   dependencies: RegionDependencies,
   session: Session,
@@ -208,6 +237,8 @@ export async function compactSurfaceRegion(
     turn: owner,
   }
   const startEvent = session.append('compaction/start', lifecycle)
+  const startedAt = performance.now()
+  const measuredBeforeTokens = dependencies.meter.measure(session).totalTokens
   const assertStable: StabilityCheck = options.stability === 'whole-surface'
     ? assertWholeSurfaceUnchanged
     : assertSelectedSpanStable
@@ -232,11 +263,21 @@ export async function compactSurfaceRegion(
     if (options.owner === null) signal?.throwIfAborted()
     assertStable(dependencies, session, summarized)
     stage = 'commit'
-    const pending = commitCompactionBody(session, startEvent, summarized)
+    const pending = commitCompactionBody(session, startEvent, summarized, {
+      measuredBeforeTokens,
+      durationMs: Math.round(performance.now() - startedAt),
+    })
+    // The after-cost is measured on the post-replacement durable surface, so
+    // the difference against the summary event's before-cost is this
+    // compaction's realized footprint reduction.
+    const measuredAfterTokens = dependencies.meter.measure(session).totalTokens
     closing = true
-    const endEvent = session.append('compaction/end', lifecycle)
+    const endEvent = session.append('compaction/end', {
+      ...lifecycle,
+      measuredAfterTokens,
+    })
     closed = true
-    result = completeCompaction(pending, endEvent)
+    result = completeCompaction(pending, endEvent, measuredAfterTokens)
   } catch (error: unknown) {
     failure = { error, stage: closing ? 'commit' : stage }
     if (!closing) {
@@ -379,6 +420,9 @@ function prepareCompaction(
     // route-priced `tokens` instead.
     shadowedTokenCount: selectedNodes.reduce((total, node) => total + node.heuristicTokens, 0),
     shadowedRouteTokenCount: selectedNodes.reduce((total, node) => total + node.tokens, 0),
+    // Derived from the log at the durable start marker, so the ordinal is
+    // stable even if the session is replayed from its events.
+    windowNumber: nextCompactionWindowNumber(session.snapshotEvents()),
     input: buildSummarizationInput(session, selection.shadowedSeqs),
   }
 }
@@ -472,12 +516,14 @@ function commitCompactionBody(
   session: Session,
   startEvent: SessionEvent<'compaction/start'>,
   summarized: SummarizedCompaction,
+  telemetry?: CompactionTelemetry,
 ): Omit<CompactionResult, 'endSeq'> {
   const {
     start,
     end,
     shadowedSeqs,
     shadowedTokenCount,
+    windowNumber,
     summary,
     provider,
     model,
@@ -498,15 +544,26 @@ function commitCompactionBody(
     shadowedRange: { start, end },
     shadowedSeqs: [...shadowedSeqs],
     shadowedTokenCount,
+    windowNumber,
     provider,
     model,
     ...maxTokens === undefined ? {} : { maxTokens },
     ...usage === undefined ? {} : { usage },
+    ...telemetry === undefined
+      ? {}
+      : {
+        measuredBeforeTokens: telemetry.measuredBeforeTokens,
+        durationMs: telemetry.durationMs,
+      },
   })
   session.append('user/message', checkpointMessage, {
     surfaceOp: { op: 'replace', startSeq: start, endSeq: end },
     sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
   })
+  // Only the before-price and duration belong on this event: the summary
+  // record precedes the replacement, so no honest after-measure exists at
+  // this point. The after-price lives on `compaction/end`.
+  const { measuredAfterTokens: _omit, ...returnedTelemetry } = telemetry ?? {}
   return {
     compactionId: startEvent.data.compactionId,
     ...startEvent.data.sourceCommandId === undefined
@@ -518,6 +575,8 @@ function commitCompactionBody(
     shadowedRange: { start, end },
     shadowedSeqs: [...shadowedSeqs],
     shadowedTokenCount,
+    windowNumber,
+    ...returnedTelemetry,
   }
 }
 
@@ -525,8 +584,13 @@ function commitCompactionBody(
 function completeCompaction(
   pending: Omit<CompactionResult, 'endSeq'>,
   endEvent: SessionEvent<'compaction/end'>,
+  measuredAfterTokens?: number,
 ): CompactionResult {
-  return { ...pending, endSeq: endEvent.seq }
+  return {
+    ...pending,
+    endSeq: endEvent.seq,
+    ...measuredAfterTokens === undefined ? {} : { measuredAfterTokens },
+  }
 }
 
 /**

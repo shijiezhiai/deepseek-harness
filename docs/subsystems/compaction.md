@@ -13,8 +13,8 @@ Compaction extends [`SessionEventMap`](session.md) with three event types via de
 | Event | Payload | Role |
 |---|---|---|
 | `compaction/start` | `{ turn }` | acquires the log-recorded lock; a number identifies the open automatic turn, while `null` identifies a standalone manual attempt |
-| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, provider, model, maxTokens?, usage? }` | the safe summary projection, optional complete provider output and usage, an `llmStreamCall: true` marker when producing the result consumed exactly one call through this context's `ctx.llm.stream()` (which requires complete `rawOutput`), the shadowed surface-boundary pair (`start`/`end` seqs — a position span, not a numeric interval), the shadowed seqs in surface order, the estimated token count, and the summarize call's envelope (`provider`, `model`, plus its generation cap when one applied) — logged so the one-shot request is reconstructable from log + code (the reconstructability Agent Note); unmarked `rawOutput` does not identify the call path |
-| `compaction/end` | `{ turn, error? }` | releases the lock with the same numeric-or-null owner (`error` records an unsuccessful attempt) |
+| `compaction/summary` | `{ summary, rawOutput?, llmStreamCall?, shadowedRange, shadowedSeqs, shadowedTokenCount, windowNumber?, measuredBeforeTokens?, measuredAfterTokens?, durationMs?, provider, model, maxTokens?, usage? }` | the safe summary projection, optional complete provider output and usage, an `llmStreamCall: true` marker when producing the result consumed exactly one call through this context's `ctx.llm.stream()` (which requires complete `rawOutput`), the shadowed surface-boundary pair (`start`/`end` seqs — a position span, not a numeric interval), the shadowed seqs in surface order, the estimated token count, and the summarize call's envelope (`provider`, `model`, plus its generation cap when one applied) — logged so the one-shot request is reconstructable from log + code (the reconstructability Agent Note), the per-session window ordinal (`windowNumber`, 1-based and counting committed compactions only), the metered route-priced totals when the backend has both at append time (the basic backend records the pre-replacement `measuredBeforeTokens` here and leaves `measuredAfterTokens` to `compaction/end`), and the transaction's wall-clock `durationMs`; unmarked `rawOutput` does not identify the call path |
+| `compaction/end` | `{ turn, error?, measuredAfterTokens? }` | releases the lock with the same numeric-or-null owner (`error` records an unsuccessful attempt); a close without a recorded failure also carries the post-replacement metered footprint, which pairs with the summary's `measuredBeforeTokens` to report the realized reduction |
 
 The lock brackets the **whole** operation: `compaction/start` is appended first, then summarization, the `compaction/summary` record, and the `user/message` replacement all land, and only then `compaction/end`. Releasing the lock last turns a crash mid-operation into a detectable orphaned lock (a `compaction/start` with no matching `compaction/end`) rather than a `compaction/end` that falsely claims compaction finished.
 
@@ -69,6 +69,19 @@ interface CompactionResult {
   shadowedSeqs: SessionSeq[]
   /** Estimated token count of the shadowed content. */
   shadowedTokenCount: number
+  /**
+   * Per-session compaction window ordinal, 1-based, mirrored from the
+   * `compaction/summary` event's `windowNumber` when the backend derived one.
+   */
+  windowNumber?: number
+  /**
+   * Meter route-priced overall footprint immediately after the replacement
+   * committed, provided by the basic backend. Together with the
+   * `compaction/summary` event's measuredBeforeTokens it reports the realized
+   * reduction; absent for results produced by model-independent backends that
+   * do not measure.
+   */
+  measuredAfterTokens?: number
 }
 ```
 
@@ -147,6 +160,16 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Abstract compaction service. Implementations own trigger policy, retention, and summarization, and may consume a separate measurement service. A successful run replaces the selected surface span with one summary node and prevents concurrent compaction of the same session. The replacement user message uses compactCheckpointSource with the transaction identity so consumers recognize and correlate it independently of the backend. Load one implementation per context as `ctx.compaction`.
 
 ```ts cordis-catalog
+/**
+ * Register one round hook. Hooks are collected in registration order; a
+ * `before` returning `Stop` aborts the round before any durable marker or
+ * mutation, and later hooks are not consulted. `after` observes every
+ * committed round, successful or not, with the result (or `null`).
+ * @param hook - round interception point.
+ * @returns a disposer unregistering this hook.
+ */
+onRound(hook: CompactionRoundHook): () => void
+
 /**
  * Consider automatic compaction for one explicit trigger. Pressure policy
  * uses the latest durable routed request, while context-overflow policy may

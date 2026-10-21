@@ -832,12 +832,14 @@ describe('MessageItem arms', () => {
         summaryEventSeq: 4,
         shadowedItemCount: 16,
         shadowedTokenCount: 11_309,
+        windowNumber: 1,
+        cacheHitPercent: '97',
       }}
       />,
     )
-    const row = view.getByRole('button', { name: /上下文已压缩/ })
+    const row = view.getByRole('button', { name: /第 1 代压缩/ })
     expect(row.getAttribute('aria-expanded')).toBe('false')
-    expect(view.getByText('已压缩 16 条历史记录（约 11309 tokens）')).toBeTruthy()
+    expect(view.getByText('已压缩 16 条历史记录（约 11309 tokens，缓存命中 97%）')).toBeTruthy()
     expect(view.queryByText(/保留的事实/)).toBeNull()
     fireEvent.click(row)
     expect(row.getAttribute('aria-expanded')).toBe('true')
@@ -854,20 +856,41 @@ describe('MessageItem arms', () => {
         summaryEventSeq: 4,
         shadowedItemCount: 16,
         shadowedTokenCount: 11_309,
+        windowNumber: 1,
+        cacheHitPercent: null,
       }}
       />,
     )
     // Collapsed there is no body sibling, so the rule's `:has(.compactionBody)`
     // gate never matches.
     expect(view.container.querySelector('[class*="compactionRow"] [class*="compactionBody"]')).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: /上下文已压缩/ }))
+    fireEvent.click(view.getByRole('button', { name: /第 1 代压缩/ }))
     expect(view.container.querySelector('[class*="compactionRow"] [class*="compactionBody"]')).not.toBeNull()
+  })
+
+  it('shows the summarization cache hit share only when the summary event carried usage', () => {
+    const withHit = render(<MessageItem t={t} node={{
+      kind: 'compaction', seq: 8, time: 1_000, summary: 's',
+      summaryEventSeq: 7, shadowedItemCount: 5, shadowedTokenCount: 900,
+      windowNumber: 1, cacheHitPercent: '100',
+    }} />)
+    expect(withHit.getByText('已压缩 5 条历史记录（约 900 tokens，缓存命中 100%）')).toBeTruthy()
+    cleanup()
+
+    const withoutUsage = render(<MessageItem t={t} node={{
+      kind: 'compaction', seq: 9, time: 1_000, summary: 's',
+      summaryEventSeq: 8, shadowedItemCount: 5, shadowedTokenCount: 900,
+      windowNumber: 1, cacheHitPercent: null,
+    }} />)
+    expect(withoutUsage.getByText('已压缩 5 条历史记录（约 900 tokens）')).toBeTruthy()
+    cleanup()
   })
 
   it('a marker whose cited summary event fell outside the window is not expandable', () => {
     const view = render(<MessageItem t={t} node={{
       kind: 'compaction', seq: 6, time: 1_000, summary: null,
       summaryEventSeq: null, shadowedItemCount: null, shadowedTokenCount: null,
+      windowNumber: null, cacheHitPercent: null,
     }} />)
     const row = view.getByRole('button', { name: /上下文已压缩/ })
     expect(row).toHaveProperty('disabled', true)
@@ -875,6 +898,27 @@ describe('MessageItem arms', () => {
     expect(view.getByText('压缩摘要不可用')).toBeTruthy()
     fireEvent.click(row) // a disabled control stays collapsed
     expect(row.getAttribute('aria-expanded')).toBeNull()
+  })
+
+  it('warns once compaction has repeated and numbers later generations', () => {
+    const first = render(<MessageItem t={t} node={{
+      kind: 'compaction', seq: 7, time: 1_000, summary: 's',
+      summaryEventSeq: 6, shadowedItemCount: 10, shadowedTokenCount: 2_000,
+      windowNumber: 2, cacheHitPercent: null,
+    }} />)
+    // window-qualified title + quality warning
+    expect(first.getByRole('button', { name: /第 2 代压缩/ })).toBeTruthy()
+    expect(first.getByText('多次压缩后，模型对早期对话的记忆可能不准')).toBeTruthy()
+    cleanup()
+
+    const legacy = render(<MessageItem t={t} node={{
+      kind: 'compaction', seq: 7, time: 1_000, summary: 's',
+      summaryEventSeq: 6, shadowedItemCount: 10, shadowedTokenCount: 2_000,
+      windowNumber: null, cacheHitPercent: null,
+    }} />)
+    expect(legacy.getByRole('button', { name: /上下文已压缩/ })).toBeTruthy()
+    expect(legacy.queryByText('多次压缩后，模型对早期对话的记忆可能不准')).toBeNull()
+    cleanup()
   })
 
   it('collapses retry details behind the durable model retry status', () => {

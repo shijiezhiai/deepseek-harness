@@ -4,15 +4,18 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { selectCompactableRange } from '@deepseek-ai/dsh-compaction-basic/src/region.ts'
+import { nextCompactionWindowNumber } from '@deepseek-ai/dsh-compaction-basic/src/region.ts'
 import { frameSummary } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
+import type { CompactionRoundContext } from '@deepseek-ai/dsh-compaction'
 import {
   resolveCompactSpec,
   resolveConfig,
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import LlmRuntime, { createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, createSystemMessage, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type {
@@ -297,6 +300,20 @@ function service(
   return new TestCompactionEngine(ctx, { headroomTokens: 0, maxTokens: 8192, ...config })
 }
 
+/** Expose the protected round-hook seam for direct contract tests. */
+class ExposedCompactionHooksEngine extends TestCompactionEngine {
+  exposeBeforeRound(round: CompactionRoundContext): Promise<boolean> {
+    return this.runBeforeRound(round)
+  }
+
+  exposeAfterRound(
+    round: CompactionRoundContext,
+    result: CompactionResult | null,
+  ): Promise<void> {
+    return this.runAfterRound(round, result)
+  }
+}
+
 async function compactIfNeeded(
   compact: BasicCompactionEngine,
   session: Session,
@@ -304,6 +321,13 @@ async function compactIfNeeded(
   model: string | undefined = MODEL,
 ): Promise<CompactionResult | null> {
   return compact.compactIfNeeded(agent(session, model), trigger, SIGNAL)
+}
+
+/** The last landed summary event, when present. */
+function summaryEventOf(session: Session): SessionEvent<'compaction/summary'> {
+  const event = session.snapshotEvents().findLast(candidate => candidate.type === 'compaction/summary')
+  if (event?.type !== 'compaction/summary') throw new Error('no compaction/summary event')
+  return event
 }
 
 describe('compact configuration and defaults', () => {
@@ -869,8 +893,7 @@ describe('pressure measurement and retention', () => {
     })
     compact.summary = Array.from({ length: 7 }, (_, index) => ({
       type: 'text',
-      text: `summary ${index}`,
-    }))
+      text: `summary ${index}`    }))
 
     await expect(compactIfNeeded(compact, conversation(4)))
       .rejects.toThrow(/still above threshold after 1 compaction attempts/)
@@ -1047,6 +1070,7 @@ describe('compaction region transaction', () => {
     expect(summary?.data).toMatchObject({
       shadowedSeqs: result.shadowedSeqs,
       shadowedTokenCount: result.shadowedTokenCount,
+      windowNumber: 1,
       provider: 'summary-provider',
       model: 'summary-model',
       maxTokens: 123,
@@ -1190,10 +1214,16 @@ describe('compaction region transaction', () => {
     const ctx = createContext()
     const meter = ctx.tokenMeter
     const original = meter.measure.bind(meter)
-    vi.spyOn(meter, 'measure').mockImplementationOnce((session) => {
-      const measurement = original(session)
-      return { ...measurement, nodes: measurement.nodes.slice(1) }
-    })
+    vi.spyOn(meter, 'measure')
+      .mockImplementationOnce((session) => {
+        // First measure call is the transaction's before-token baseline at the
+        // durable start marker; let it see the untouched surface.
+        return original(session)
+      })
+      .mockImplementationOnce((session) => {
+        const measurement = original(session)
+        return { ...measurement, nodes: measurement.nodes.slice(1) }
+      })
     const compact = service({ auto: false }, ctx)
     const session = conversation(2)
     const nodes = session.surface.nodes
@@ -1319,6 +1349,312 @@ describe('compaction region transaction', () => {
       nodes[1]!,
       agent(session),
     )).resolves.toMatchObject({ shadowedSeqs: [nodes[0]!, nodes[1]!] })
+  })
+
+  it('derives the next window ordinal from landed summaries only', () => {
+    const empty = conversation(1).snapshotEvents()
+    expect(nextCompactionWindowNumber(empty)).toBe(1)
+
+    const oneLanded = conversation(1)
+    oneLanded.append('compaction/summary', {
+      compactionId: CompactionId('previous'),
+      summary: [{ type: 'text', text: 'first' }],
+      shadowedRange: { start: SessionSeq(1), end: SessionSeq(2) },
+      shadowedSeqs: [SessionSeq(1), SessionSeq(2)],
+      shadowedTokenCount: 10,
+      windowNumber: 1,
+      provider: 'p',
+      model: 'm',
+    })
+    expect(nextCompactionWindowNumber(oneLanded.snapshotEvents())).toBe(2)
+
+    const twoLanded = conversation(1)
+    twoLanded.append('compaction/summary', {
+      compactionId: CompactionId('previous-1'),
+      summary: [{ type: 'text', text: 'first' }],
+      shadowedRange: { start: SessionSeq(1), end: SessionSeq(2) },
+      shadowedSeqs: [SessionSeq(1), SessionSeq(2)],
+      shadowedTokenCount: 10,
+      windowNumber: 1,
+      provider: 'p',
+      model: 'm',
+    })
+    twoLanded.append('compaction/summary', {
+      compactionId: CompactionId('previous-2'),
+      summary: [{ type: 'text', text: 'second' }],
+      shadowedRange: { start: SessionSeq(3), end: SessionSeq(4) },
+      shadowedSeqs: [SessionSeq(3), SessionSeq(4)],
+      shadowedTokenCount: 10,
+      windowNumber: 2,
+      provider: 'p',
+      model: 'm',
+    })
+    expect(nextCompactionWindowNumber(twoLanded.snapshotEvents())).toBe(3)
+
+    // A failed round (start/end without summary) and a model-free prune never
+    // consume a window.
+    const withFailures = twoLanded
+    withFailures.append('compaction/start', {
+      compactionId: CompactionId('failed'),
+      turn: 1,
+    })
+    withFailures.append('compaction/end', {
+      compactionId: CompactionId('failed'),
+      turn: 1,
+      error: 'boom',
+    })
+    withFailures.append('compaction/prune', {
+      shadowedRange: { start: SessionSeq(5), end: SessionSeq(6) },
+      shadowedSeqs: [SessionSeq(5), SessionSeq(6)],
+      shadowedTokenCount: 40,
+    })
+    expect(nextCompactionWindowNumber(withFailures.snapshotEvents())).toBe(3)
+  })
+
+  it('assigns monotonically increasing windows across repeated compactions', async () => {
+    const compact = service()
+    const session = conversation(2)
+    let nodes = session.surface.nodes
+
+    const first = await compact.compactRegion(
+      nodes[0]!,
+      nodes[1]!,
+      agent(session, MODEL),
+    )
+    expect(first.windowNumber).toBe(1)
+    expect(summaryEventOf(session).data.windowNumber).toBe(1)
+
+    nodes = session.surface.nodes
+    const second = await compact.compactRegion(
+      nodes[0]!,
+      nodes[1]!,
+      agent(session, MODEL),
+    )
+    expect(second.windowNumber).toBe(2)
+    expect(summaryEventOf(session).data.windowNumber).toBe(2)
+
+    // A failed attempt in between consumes no window.
+    const failing = service()
+    failing.error = new Error('boom')
+    await expect(failing.compactRegion(
+      nodes[0]!,
+      nodes[1]!,
+      agent(session, MODEL),
+    )).rejects.toThrow('boom')
+
+    const thirdSession = session
+    const third = await compact.compactRegion(
+      thirdSession.surface.nodes[0]!,
+      thirdSession.surface.nodes[1]!,
+      agent(thirdSession, MODEL),
+    )
+    expect(third.windowNumber).toBe(3)
+  })
+
+  it('telemetries the committed before/after footprint and transaction duration', async () => {
+    const compact = service({
+      summarizationProvider: 'historical',
+      summarizationModel: 'telemetry-model',
+    })
+    const session = conversation(2)
+    const nodes = session.surface.nodes
+
+    const result = await compact.compactRegion(
+      nodes[0]!,
+      nodes[2]!,
+      agent(session, MODEL),
+    )
+    expect(result).not.toBeNull()
+    const summaryEvent = session.snapshotEvents().findLast(
+      event => event.type === 'compaction/summary',
+    ) as SessionEvent<'compaction/summary'> | undefined
+    expect(summaryEvent).toBeDefined()
+    expect(summaryEvent!.data.measuredBeforeTokens).toBeGreaterThan(0)
+    expect(summaryEvent!.data.durationMs).toEqual(expect.any(Number))
+    expect(summaryEvent!.data.measuredAfterTokens).toBeUndefined()
+    // The after-cost is reported where an honest post-replacement measurement
+    // exists: on the closing `compaction/end` event and on the result.
+    const endEvent = session.snapshotEvents().findLast(
+      event => event.type === 'compaction/end',
+    ) as SessionEvent<'compaction/end'> | undefined
+    expect(endEvent).toBeDefined()
+    expect(endEvent!.data.measuredAfterTokens).toBeGreaterThan(0)
+    expect(result!.measuredAfterTokens).toBe(endEvent!.data.measuredAfterTokens)
+    // The meter-priced footprint must actually shrink under compaction.
+    expect(summaryEvent!.data.measuredBeforeTokens!).toBeGreaterThan(
+      endEvent!.data.measuredAfterTokens!,
+    )
+  })
+
+  it('consults registered round hooks before and after every automatic round', async () => {
+    const compact = service({
+      auto: false,
+      thresholdRatio: 0.5,
+      retainTokens: 180,
+    })
+    const session = conversation(4)
+    const rounds: Array<{ kind: string; before: number }> = []
+    const afters: Array<{ result: CompactionResult | null }> = []
+    compact.onRound({
+      before(round) {
+        rounds.push({ kind: round.kind, before: round.measuredBeforeTokens ?? -1 })
+        return 'continue'
+      },
+      after(_round, result) {
+        afters.push({ result })
+        return undefined
+      },
+    })
+
+    const result = await compactIfNeeded(compact, session)
+
+    expect(result).not.toBeNull()
+    expect(rounds.length).toBeGreaterThan(0)
+    expect(rounds.every(round => round.kind === 'automatic')).toBe(true)
+    expect(rounds.every(round => round.before > 0)).toBe(true)
+    // One after-observer per round, each carrying the round's committed result.
+    expect(afters).toHaveLength(rounds.length)
+    expect(afters.at(-1)?.result).toBe(result)
+  })
+
+  it('stops a round when a before hook returns stop, writing no bracket', async () => {
+    const compact = service({
+      auto: false,
+      thresholdRatio: 0.5,
+      retainTokens: 180,
+    })
+    const session = conversation(4)
+    let saw = 0
+    compact.onRound({
+      before(round) {
+        saw += 1
+        void round
+        return 'stop'
+      },
+    })
+
+    const result = await compactIfNeeded(compact, session)
+
+    expect(result).toBeNull()
+    expect(saw).toBe(1)
+    expect(session.snapshotEvents().filter(event => event.type.startsWith('compaction/'))).toEqual([])
+    expect(compact.calls).toHaveLength(0)
+  })
+
+  it('observes a manual round with kind manual through the seam', async () => {
+    // compactNow needs a closed tail: turn boundaries must not be open.
+    const session = Session.create(SessionId('hook-manual'))
+    for (let turn = 1; turn <= 2; turn += 1) {
+      session.append('turn/start', { turn })
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'older conversation history '.repeat(60) }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      if (turn === 1) {
+        session.append('request/header', {
+          header: { config: { provider: MODEL, model: MODEL } },
+          reason: 'initial',
+        })
+      }
+      session.append('step/start', { turn, step: 1 })
+      session.append('assistant/message', {
+        turn,
+        step: 1,
+        stream: [],
+        message: createMessage({
+          role: 'assistant',
+          content: [{ type: 'text', text: 'answer' }],
+          source: { kind: 'model', ...{ provider: MODEL, model: MODEL } },
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('step/end', { turn, step: 1 })
+      session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    }
+    let released = 0
+    const idleAgent = {
+      ...agent(session, MODEL),
+      runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+        return task(SIGNAL).finally(() => { released += 1 })
+      },
+    } as unknown as Agent
+    // compactNow's durability flush comes from ctx.sessions; keep it a no-op.
+    const ctx = createContext(2_000)
+    const flush = vi.fn(async () => false)
+    ;(ctx as unknown as { sessions: { flush: typeof flush } }).sessions = { flush }
+    const compact = new ExposedCompactionHooksEngine(ctx, {
+      auto: false,
+      thresholdRatio: 0.5,
+      retainTokens: 180,
+    })
+    const rounds: string[] = []
+    compact.onRound({
+      before(round) {
+        rounds.push(round.kind)
+        return 'continue'
+      },
+      async after(round, result) {
+        void round
+        void result
+      },
+    })
+
+    const result = await compact.compactNow(idleAgent, SIGNAL)
+
+    expect(result).not.toBeNull()
+    expect(rounds).toEqual(['manual'])
+    expect(released).toBe(1)
+  })
+
+  it('isolates hook disposers: a removed hook no longer runs', async () => {
+    const engine = new ExposedCompactionHooksEngine(createContext(2_000), { auto: false })
+    const round: CompactionRoundContext = {
+      compactionId: CompactionId('hook-disposer'),
+      kind: 'manual',
+    }
+    let callCount = 0
+    const disposer = engine.onRound({
+      before: () => {
+        callCount += 1
+        return 'continue'
+      },
+    })
+
+    await engine.exposeBeforeRound(round)
+    disposer()
+    await engine.exposeBeforeRound(round)
+
+    expect(callCount).toBe(1)
+  })
+
+  it('swallows a throwing after hook so a committed round still reads clean', async () => {
+    const engine = new ExposedCompactionHooksEngine(createContext(2_000), { auto: false })
+    const round: CompactionRoundContext = {
+      compactionId: CompactionId('after-throw'),
+      kind: 'manual',
+    }
+    engine.onRound({
+      before: () => 'continue',
+      after: () => {
+        throw new Error('observer failure')
+      },
+    })
+
+    await expect(engine.exposeAfterRound(round, null)).resolves.toBeUndefined()
+  })
+
+  it('propagates a throwing before hook through the normal failure path', async () => {
+    const engine = new ExposedCompactionHooksEngine(createContext(2_000), { auto: false })
+    const round: CompactionRoundContext = {
+      compactionId: CompactionId('before-throw'),
+      kind: 'manual',
+    }
+    engine.onRound({
+      before: () => {
+        throw new Error('veto failure')
+      },
+    })
+
+    await expect(engine.exposeBeforeRound(round)).rejects.toThrow('veto failure')
   })
 })
 

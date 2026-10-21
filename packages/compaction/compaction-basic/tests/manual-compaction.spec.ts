@@ -442,7 +442,8 @@ describe('compactNow transaction and failure classification', () => {
     expect(start?.data).toEqual({ ...correlated, turn: null })
     expect(summaryEvent?.data.sourceCommandId).toBe(commandId)
     expect(checkpoint?.data.source).toMatchObject(correlated)
-    expect(end?.data).toEqual({ ...correlated, turn: null })
+    expect(end?.data).toMatchObject({ ...correlated, turn: null })
+    expect(end?.data.measuredAfterTokens).toBeGreaterThan(0)
   })
 
   it('reports a live unmatched bracket as busy without summarizing', async () => {
@@ -748,7 +749,8 @@ describe('compactNow transaction and failure classification', () => {
     expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
     const start = session.snapshotEvents().findLast(event => event.type === 'compaction/start')
     const end = session.snapshotEvents().findLast(event => event.type === 'compaction/end')
-    expect(end?.data).toEqual({ compactionId: start?.data.compactionId, turn: null })
+    expect(end?.data).toMatchObject({ compactionId: start?.data.compactionId, turn: null })
+    expect(end?.data.measuredAfterTokens).toBeGreaterThan(0)
   })
 
   it('lets a pre-aborted signal win before reservation, measurement, or summarization', async () => {

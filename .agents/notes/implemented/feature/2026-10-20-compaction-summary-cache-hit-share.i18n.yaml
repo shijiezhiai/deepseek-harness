@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-20-compaction-summary-cache-hit-share.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-20-compaction-summary-cache-hit-share.md
+/agent-note-cache-hit-share-on-the-compaction-marker:
+  en: 6f7a719791aab7ee
+  zh: 496e5f4d68b137ab
+/agent-note-cache-hit-share-on-the-compaction-marker/problem:
+  en: 6c4e0bc0460bf95c
+  zh: b8aec4077c11ca88
+/agent-note-cache-hit-share-on-the-compaction-marker/decision:
+  en: a15c7c13f167e5ac
+  zh: a15c7c13f167e5ac
+/agent-note-cache-hit-share-on-the-compaction-marker/decision/1-compute-the-share-during-extraction:
+  en: 5259fa98eb6bc263
+  zh: 8e920f43d413df24
+/agent-note-cache-hit-share-on-the-compaction-marker/decision/2-render-as-a-complete-locale-sentence:
+  en: e2eba82bc51f6207
+  zh: ecca3cc2868151fa
+/agent-note-cache-hit-share-on-the-compaction-marker/alternatives-considered:
+  en: af2270db528286e8
+  zh: 70b842e6f87efb82
+/agent-note-cache-hit-share-on-the-compaction-marker/consequences:
+  en: cd5c89c0cda0e529
+  zh: dedeeb84686096a4
+/agent-note-cache-hit-share-on-the-compaction-marker/testing:
+  en: 19ce6ca006e7c955
+  zh: db957a204be8b5f8

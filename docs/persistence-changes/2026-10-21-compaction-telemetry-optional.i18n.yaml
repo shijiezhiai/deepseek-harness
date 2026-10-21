@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-21-compaction-telemetry-optional.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-21-compaction-telemetry-optional.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-21-compaction-telemetry-optional:
+  en: 644d72cc86603a2f
+  zh: 263516c85c07e9e6
+/2026-10-21-compaction-telemetry-optional/summary:
+  en: 4177f071dbe99340
+  zh: a53aeeafd8c3b5ed
+/2026-10-21-compaction-telemetry-optional/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-21-compaction-telemetry-optional/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-21-compaction-telemetry-optional/compatibility:
+  en: f29550c055740c87
+  zh: e039a4621db321f7
+/2026-10-21-compaction-telemetry-optional/verification:
+  en: 719790a00aa099be
+  zh: 41f296b1977706dd
+/2026-10-21-compaction-telemetry-optional/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

@@ -226,6 +226,8 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
   summaryEventSeq: 7,
   shadowedItemCount: 16,
   shadowedTokenCount: 11_309,
+  windowNumber: 1,
+  cacheHitPercent: '97',
   ...over,
 })
 
@@ -4352,7 +4354,7 @@ describe('ChatView', () => {
 
     expect(view.queryByText('正在压缩…')).toBeNull()
     expect(view.queryByText('上下文已压缩')).toBeNull()
-    expect(view.getByText('已压缩 16 条历史记录（约 11309 tokens）')).toBeTruthy()
+    expect(view.getByText('已压缩 16 条历史记录（约 11309 tokens，缓存命中 97%）')).toBeTruthy()
     const row = view.getByRole('button', { name: /compact/ })
     expect(row.getAttribute('aria-expanded')).toBe('false')
     expect(row.querySelector('[data-compaction-icon="context"]')).not.toBeNull()
