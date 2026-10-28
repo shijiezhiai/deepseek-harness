@@ -1,0 +1,10 @@
+# Live composition for the context-pressure guard snapshot: the shipped base
+# bundle (which already mounts token-meter) plus the guard. The scenario
+# publishes on every step so the fixture shows one reading per tool call
+# instead of the default debounce. The guard is mounted by source path because
+# PR-1 ships the package without a base-bundle entry.
+- insert:
+    - id: context-pressure-reminder
+      name: '../../../packages/guard/context-pressure-reminder/src/index.ts'
+      config:
+        minDeltaRatio: 0
