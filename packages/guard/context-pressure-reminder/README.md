@@ -1,5 +1,5 @@
 ---
-description: "Loop-hygiene guard that reports the session's context size to the model on every tool step, for users and maintainers deciding whether the model should see its own token pressure."
+description: "Loop-hygiene guard that reports the session's context size to the model on every tool step and warns once it is one large result from the window, for users and maintainers deciding whether the model should see its own token pressure."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The harness measures the request it is about to send on every step, and until now only compaction consumed that number: the model learned its context was full when compaction deleted the middle of its history. `dsh-context-pressure-reminder` gives the model the number before that happens. After each tool step it appends one line to the next step's context — `[context: ~48.2k tokens]`, plus a window-relative percentage when the routed model publishes a context window — so the model can read less, write findings to a file instead of into the transcript, or delegate, while there is still room. The reading is advice: it carries no instruction, names no threshold, and never blocks a tool call.
+The harness measures the request it is about to send on every step, and until now only compaction consumed that number: the model learned its context was full when compaction deleted the middle of its history. `dsh-context-pressure-reminder` gives the model the number before that happens. After each tool step it appends one line to the next step's context — `[context: ~48.2k tokens]`, plus a window-relative percentage when the routed model publishes a context window — so the model can read less, write findings to a file instead of into the transcript, or delegate, while there is still room. Once the remaining headroom is narrower than one more large tool result, it appends a warning to the step it is about to take instead, so the model can finish a unit of work and write findings to a file before the window runs out. Both messages are advice: they name no compaction threshold and never block a tool call.
 
 ## Table of Contents
 
@@ -51,7 +51,29 @@ The defaults publish a reading whenever the measurement has moved; tune how much
 | `precision` | `1` | Decimal places in the `k` form |
 | `enabled` | `true` | Master switch |
 
-Invalid configuration fails at load — a negative `minDeltaRatio`, a negative or non-integer `precision`, or an unknown `unit` throws instead of silently changing behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-context-pressure-reminder) documents every accepted value.
+### Setting the danger band
+
+The reading is a fact on every step; the nudge is a warning near the end. The band is the headroom one more large observation would consume, sized from the recent tool results the session actually produced:
+
+```yaml
+- name: '@deepseek-ai/dsh-context-pressure-reminder'
+  config:
+    nudge:
+      minBandRatio: 0.1        # floor: never a narrower band than 10% of the window
+      maxBandRatio: 0.5        # ceiling: never a wider band than half the window
+      observationMultiplier: 2 # one more result like the biggest one, times this
+      observationWindow: 3     # recent tool results the band is sized from
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `nudge.enabled` | `true` | Whether the near-window warning is installed at all |
+| `nudge.minBandRatio` | `0.1` | Lower bound on the band, as a fraction of the context window |
+| `nudge.maxBandRatio` | `0.5` | Upper bound on the band, as a fraction of the context window |
+| `nudge.observationMultiplier` | `2` | Multiplier on the largest retained tool result |
+| `nudge.observationWindow` | `3` | How many recent tool results size the band |
+
+Invalid configuration fails at load — a negative `minDeltaRatio`, a negative or non-integer `precision`, an unknown `unit`, a band ratio outside `(0, 1]`, a `minBandRatio` above `maxBandRatio`, a negative `observationMultiplier`, or a non-integer `observationWindow` throws instead of silently changing behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-context-pressure-reminder) documents every accepted value.
 
 ### What you get
 
@@ -69,6 +91,14 @@ When the routed model publishes a context window, the line also carries the shar
 
 The message arrives as an ordinary user-role message attributed to the plugin, after that step's tool results.
 
+Once the remaining headroom is narrower than one more large tool result, the guard adds a warning to the step it is about to take:
+
+```
+[context: ~95.0k/100.0k tokens · 95% — one more large tool result can overshoot the window; prefer finishing a unit of work and writing findings to a file]
+```
+
+It stays silent until the session leaves the band again, so a session that lives near the ceiling reads the warning once rather than every step; a move of at least `minDeltaRatio` re-arms it. The warning carries no percentage for a route that publishes no window.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -82,24 +112,27 @@ The message arrives as an ordinary user-role message attributed to the plugin, a
 - **Report, never prescribe.** The guard publishes a measurement. Tactics (compact, prune, delegate, stop reading) belong to the model and to compaction's own policy; a guard that named them would duplicate `thresholdRatio` under a different name.
 - **Fold onto the downstream decision.** The listener calls `next()` first and appends to whatever came back, so a later listener's `block` still blocks and a later `accept` keeps its own contexts, with the reading placed before them.
 - **Measure through the shared meter.** `ctx.tokenMeter.measure()` is the same call compaction makes, so both agree on what pressure means.
-- **Fail loud at load.** `precision`, `minDeltaRatio`, and `unit` validate in `apply`.
+- **Fail loud at load.** `precision`, `minDeltaRatio`, `unit`, and every band field validate in `apply`.
 
 ### Where it hooks
 
 `tools/post-execute` runs after each tool result is durable and before the next step is claimed. The listener measures once per step, applies the debounce against that agent's last published reading, and returns `{ kind: 'accept', additionalContexts: [message] }`. The loop's active-batch FIFO merges the context into the next step's inbox, which splices it onto the surface as a `user/message` with source `{ kind: 'plugin', plugin: 'context-pressure-reminder', form: 'notice', summary: 'context pressure' }`.
 
-That path is why the guard adds no session event and no second surface producer: the reading is model-visible input, so it must be logged and reconstructable, and the loop's own splice already guarantees both.
+`agent/pre-step` carries the nudge. The listener awaits the downstream decision and appends its message to whatever came back, so a rejected step stays rejected and a later listener's contexts keep their order; the loop logs every returned message as a `user/message` before the step's first request. Both hooks measure through the shared meter, so a step that publishes a reading and a nudge shares one occupancy number.
 
-Parallel calls in one step share one reading — the debounce is keyed per agent and the measurement describes the step, not the call.
+That is why the guard adds no session event and no second surface producer: every message is model-visible input, so it must be logged and reconstructable, and the loop's own splice already guarantees both.
+
+Parallel calls in one step share one reading — the debounce is keyed per agent and the measurement describes the step, not the call. The nudge has its own schedule: it fires once per step while the session is inside the band, and the reading it shares a step with is a separate message.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, fail-loud validation, the post-execute listener |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, fail-loud validation, the post-execute and pre-step listeners |
 | [`src/pressure.ts`](src/pressure.ts) | Pure rendering and debounce decisions |
+| [`src/nudge.ts`](src/nudge.ts) | Pure band sizing, the nudge decision, and its rendering |
 | [`src/internal.ts`](src/internal.ts) | Shared internal types |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant: the baseline map is private to one listener) |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant: both baselines are private to one listener) |
 
 </details>
 

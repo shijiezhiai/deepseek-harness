@@ -447,6 +447,12 @@
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
 
+    # The model's own context pressure after each tool step, so it can converge
+    # its context use before automatic compaction takes the decision away. The
+    # reading needs the token meter, which this leaf mounts above.
+    - id: context-pressure-reminder
+      name: '@deepseek-ai/dsh-context-pressure-reminder'
+
     # The shared base enables the stable model-facing web_search and web_fetch
     # tools. The Web app disables this host row and composes both tools per agent
     # preset; products with a stricter network policy override tool-web. DeepSeek

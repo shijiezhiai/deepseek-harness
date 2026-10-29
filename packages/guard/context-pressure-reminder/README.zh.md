@@ -51,7 +51,29 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 | `precision` | `1` | `k` 形式的小数位 |
 | `enabled` | `true` | 总开关 |
 
-非法配置会在加载时失败——负的 `minDeltaRatio`、负数或非整数的 `precision`、未知的 `unit` 都会直接抛错，而不是悄悄改变行为。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-context-pressure-reminder)记录了每个可接受值。
+### 设置危险带宽
+
+读数是每一步的事实，提醒则是接近上限时的警告。带宽是「再一个大观测就会吃掉的余量」，由会话实际产生的近期工具结果来定尺度：
+
+```yaml
+- name: '@deepseek-ai/dsh-context-pressure-reminder'
+  config:
+    nudge:
+      minBandRatio: 0.1        # floor: never a narrower band than 10% of the window
+      maxBandRatio: 0.5        # ceiling: never a wider band than half the window
+      observationMultiplier: 2 # one more result like the biggest one, times this
+      observationWindow: 3     # recent tool results the band is sized from
+```
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `nudge.enabled` | `true` | 是否安装接近窗口的警告 |
+| `nudge.minBandRatio` | `0.1` | 带宽下界，占上下文窗口的比例 |
+| `nudge.maxBandRatio` | `0.5` | 带宽上界，占上下文窗口的比例 |
+| `nudge.observationMultiplier` | `2` | 对最大保留工具结果的乘数 |
+| `nudge.observationWindow` | `3` | 有多少条近期工具结果参与定尺度 |
+
+非法配置会在加载时失败——负的 `minDeltaRatio`、负数或非整数的 `precision`、未知的 `unit`、不在 `(0, 1]` 内的带宽比例、高于 `maxBandRatio` 的 `minBandRatio`、负的 `observationMultiplier`、非整数的 `observationWindow` 都会直接抛错，而不是悄悄改变行为。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-context-pressure-reminder)记录了每个可接受值。
 
 ### 你会得到什么
 
@@ -69,6 +91,14 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 
 该消息以普通的 user 角色消息形式、归属于插件，在该步的工具结果之后到达。
 
+当剩余余量窄于「再来一个大工具结果」时，guard 会在即将开始的那一步追加一条警告：
+
+```
+[context: ~95.0k/100.0k tokens · 95% — one more large tool result can overshoot the window; prefer finishing a unit of work and writing findings to a file]
+```
+
+会话离开带宽之前它保持沉默，因此长期贴着上限跑的会话只会读到一次警告，而不是每步一次；变动达到 `minDeltaRatio` 会重新武装它。路由不公布窗口时，警告不带百分比。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -82,24 +112,27 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 - **只报告，不规定。** guard 发布一次测量。战术（压缩、裁剪、委托、停止读取）属于模型与 compaction 自己的策略；一个把它们写死的 guard，不过是换了个名字的 `thresholdRatio`。
 - **折叠进下游决定。** 监听器先调用 `next()`，再追加到返回值上，所以下游监听器的 `block` 依然阻断，下游的 `accept` 会保留它自己的 contexts，而读数排在它们之前。
 - **通过共享 meter 测量。** `ctx.tokenMeter.measure()` 就是 compaction 用的那次调用，因此两者对「压力」的理解天然一致。
-- **加载时失败得响。** `precision`、`minDeltaRatio`、`unit` 在 `apply` 中校验。
+- **加载时失败得响。** `precision`、`minDeltaRatio`、`unit` 以及每个带宽字段都在 `apply` 中校验。
 
 ### 挂载位置
 
 `tools/post-execute` 在每个工具结果落盘之后、下一步被认领之前运行。监听器每步测量一次，针对该 agent 上一次已发布的读数做去抖，然后返回 `{ kind: 'accept', additionalContexts: [message] }`。loop 的 active-batch FIFO 把这个 context 并入下一步的 inbox，后者再把它 splice 到 surface 上，成为带 source `{ kind: 'plugin', plugin: 'context-pressure-reminder', form: 'notice', summary: 'context pressure' }` 的 `user/message`。
 
-这条路径正是本 guard 不需要新增 session event、也不需要第二个 surface 生产者的原因：读数是模型可见输入，因此必须被记录且可重建，而 loop 自己的 splice 已经同时保证了这两点。
+`agent/pre-step` 承载提醒。监听器先 await 下游决策，再把消息追加到返回结果之后，因此被拒绝的步仍然被拒绝、后续监听器的 context 也保持原有顺序；loop 会在该步的第一个请求之前把每条返回消息记成 `user/message`。两个钩子都通过共享 meter 测量，所以同一步里同时发布读数和提醒时用的是同一个占用数字。
 
-同一步内的并行调用共享一条读数——去抖按 agent 计，测量描述的是这一步而不是某一次调用。
+这条路径正是本 guard 不需要新增 session event、也不需要第二个 surface 生产者的原因：每条消息都是模型可见输入，因此必须被记录且可重建，而 loop 自己的 splice 已经同时保证了这两点。
+
+同一步内的并行调用共享一条读数——去抖按 agent 计，测量描述的是这一步而不是某一次调用。提醒有自己的节奏：会话处于带宽内时每步最多一次，与它同处一步的读数是一条独立消息。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、加载时校验、post-execute 监听器 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、加载时校验、post-execute 与 pre-step 监听器 |
 | [`src/pressure.ts`](src/pressure.ts) | 纯渲染与去抖判定 |
+| [`src/nudge.ts`](src/nudge.ts) | 纯带宽计算、提醒判定及其渲染 |
 | [`src/internal.ts`](src/internal.ts) | 共享内部类型 |
-| [`src/invariant.ts`](src/invariant.ts) | invariant 伴生文件（无运行时 invariant：基线映射是单个监听器的私有状态） |
+| [`src/invariant.ts`](src/invariant.ts) | invariant 伴生文件（无运行时 invariant：两个基线都是单个监听器的私有状态） |
 
 </details>
 
