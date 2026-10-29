@@ -155,15 +155,12 @@ Parallel calls in one step share one reading — the debounce is keyed per agent
 
 #### What the model sees
 
-One extra user-role message after a tool step that moved the measurement:
+One extra user-role message after a tool step that moved the measurement. The first line is the count-only reading a route without a published window gets; the second adds the share once the route publishes one:
+
+##### The reading
 
 ```markdown
 [context: ~48.2k tokens]
-```
-
-or, when the route publishes a window:
-
-```markdown
 [context: ~48.2k/200k tokens · 24%]
 ```
 
@@ -179,6 +176,7 @@ Append-only; the reading follows the reusable request prefix and does not invali
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **No reading after a turn-concluding tool** — a result carrying `concludesTurn` ends the turn at its step, and any next-step work reopens that boundary to run another model request. Publishing there would buy an extra request to say something the turn no longer needs, so the reading yields to the conclusion. A reading submitted by an earlier sibling in the same batch stays.
 - **No reading between an assistant call and its own results** — a single step whose tools balloon the context is reported on the following step. Closing it needs a surface producer outside the tool pipeline.
 - **No subagent roll-up** — each agent's reading covers its own surface; a parent does not see a child's consumption.
 - **A missing token meter is not fatal** — the guard warns once and publishes nothing rather than failing the turn.

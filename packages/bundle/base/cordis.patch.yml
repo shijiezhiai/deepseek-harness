@@ -356,6 +356,12 @@
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
 
+    # Model-facing `compact_context`: the same reduction, requested by the model
+    # that is running out of room. Follows command-compact so the tool catalog
+    # lists it after the human entry.
+    - id: tool-compact
+      name: '@deepseek-ai/dsh-tool-compact'
+
     - id: subagent
       name: '@deepseek-ai/dsh-subagent'
 

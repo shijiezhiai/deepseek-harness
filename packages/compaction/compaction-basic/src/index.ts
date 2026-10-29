@@ -7,6 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
@@ -28,6 +29,12 @@ import {
   selectCompactableRange,
 } from './region.ts'
 import { summarizeWithLlm } from './summarizer.ts'
+import { COMPACT_ANSWER_PLUGIN, pendingCompactionRequest } from '@deepseek-ai/dsh-tool-compact/request'
+import { evaluateRequestGate, renderRefusal } from './gate.ts'
+import type { RequestGateInput, RequestRefusal } from './gate.ts'
+import { turnCompactionHistory } from './request.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 import type {
   BasicCompactionConfig,
@@ -86,6 +93,8 @@ const summarizationModelSchema = z.string()
 const maxTokensSchema = z.number().step(1).min(1)
 const compactionRetriesSchema = z.number().step(1).min(0)
 const maxOverflowRetriesSchema = z.number().step(1).min(0)
+const requestRatioSchema = z.number()
+const requestMaxPerTurnSchema = z.number().step(1).min(0)
 
 const modelPolicy: z<ModelCompactPolicyConfig> = z.object({
   provider: z.string().required(),
@@ -124,6 +133,11 @@ export class BasicCompactionEngine extends CompactionEngine {
     maxOverflowRetries: maxOverflowRetriesSchema,
     modelPolicies: z.array(modelPolicy),
     auto: z.boolean(),
+    serveRequests: z.boolean(),
+    requestPolicy: z.object({
+      minContextRatio: requestRatioSchema,
+      maxPerTurn: requestMaxPerTurnSchema,
+    }),
   })
 
   /** Resolved and validated compaction configuration. */
@@ -158,6 +172,10 @@ export class BasicCompactionEngine extends CompactionEngine {
       { agent, signal },
       next,
     ): Promise<PreStepDecision> => {
+      if (!signal.aborted && this.config.serveRequests) {
+        const served = await this.serveModelRequest(agent, signal)
+        if (served !== undefined) return served
+      }
       if (!signal.aborted) {
         try {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
@@ -277,6 +295,89 @@ export class BasicCompactionEngine extends CompactionEngine {
       ? this.config
       : resolveTargetPolicy(this.config, target)
     return summarizeWithLlm(this.ctx, config, input, agent, signal)
+  }
+
+  /**
+   * Serve one pending model request, if the log carries one and the policy
+   * allows it.
+   *
+   * Returns `undefined` when no request was pending, so the caller's own
+   * pressure branch still runs. When a request WAS pending this always returns a
+   * decision: the model was told compaction would run before its next step, so
+   * leaving the request unanswered is a promise nothing kept. A declined request
+   * still changes the surface — it appends a notice — which is what retires it,
+   * so the model is told once rather than on every following step.
+   *
+   * @param agent - agent whose log carries the request.
+   * @param signal - live turn cancellation signal.
+   * @returns the pre-step decision that answers the request, or undefined.
+   */
+  private async serveModelRequest(
+    agent: Agent,
+    signal: AbortSignal,
+  ): Promise<PreStepDecision | undefined> {
+    const session = agent.session
+    const request = pendingCompactionRequest(session)
+    if (request === undefined || signal.aborted) return undefined
+
+    const history = turnCompactionHistory(session, request.turn)
+    const measurement = this.ctx.tokenMeter.measure(session)
+    const input: RequestGateInput = {
+      totalTokens: measurement.totalTokens,
+      contextWindow: session.requestContext()?.contextWindow,
+      servedThisTurn: history.servedRequests,
+      config: this.config.requestPolicy,
+    }
+    const declined = (reason: RequestRefusal): PreStepDecision => ({
+      kind: 'enter',
+      messages: [this.noticeMessage(renderRefusal(reason, input), 'compaction declined')],
+    })
+
+    const decision = evaluateRequestGate(input)
+    if (decision.kind === 'refuse') return declined(decision.reason)
+
+    if (history.compactions > 0 && history.servedRequests === 0) {
+      // Something already compacted in this turn without the model asking.
+      // Answering again would replace a surface the model has not read yet, and
+      // the occupancy measured above describes that unread surface.
+      return declined('turn-limit')
+    }
+
+    const target = routedTarget(session)
+    if (target === undefined) return declined('unroutable')
+
+    const prune = this.ctx.get('toolResultPruner')
+    if (prune !== undefined) prune.pruneSession(session)
+    const pruned = this.ctx.tokenMeter.measure(session)
+    // A requested compaction retains nothing: the model said the finished part of
+    // the conversation is disposable, so the summary — not a verbatim tail — is
+    // what carries the work forward.
+    const range = selectCompactableRange(session, pruned, 0)
+    if (range === null) return declined('nothing-to-compact')
+
+    let result: CompactionResult
+    try {
+      result = await this.compactRegion(range.start, range.end, agent, signal)
+    } catch (error: unknown) {
+      return { kind: 'enter', messages: [this.noticeMessage(
+        `Compaction failed and changed nothing: ${error instanceof Error ? error.message : String(error)}`,
+        'compaction failed',
+      )] }
+    }
+    const reduced = ` The context is now ~${this.ctx.tokenMeter.measure(session).totalTokens} estimated tokens.`
+    return { kind: 'enter', messages: [this.noticeMessage(
+      `Compaction finished: ${result.shadowedSeqs.length} earlier nodes were folded into a summary `
+        + `of ~${result.shadowedTokenCount} tokens.${reduced} Continue the work.`,
+      'compaction finished',
+    )] }
+  }
+
+  /** Render a backend answer to the model as an ordinary notice. */
+  private noticeMessage(text: string, summary: string): UserMessage {
+    return createUserMessage({
+      content: [{ type: 'text', text }],
+      source: { kind: 'plugin', plugin: COMPACT_ANSWER_PLUGIN, form: 'notice', summary },
+    })
   }
 
   /**
@@ -421,7 +522,7 @@ export class BasicCompactionEngine extends CompactionEngine {
             0,
           )
           if (range === null) return null
-          return await compactSurfaceRegion(
+          const result = await compactSurfaceRegion(
             this.regionDependencies(),
             agent.session,
             range.start,
@@ -437,6 +538,7 @@ export class BasicCompactionEngine extends CompactionEngine {
             },
             operationSignal,
           )
+          return result
         } catch (error: unknown) {
           if (agentSignal.aborted && operationSignal.reason === agentSignal.reason) {
             throw new ManualCompactionError(

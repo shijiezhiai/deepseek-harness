@@ -221,6 +221,48 @@ describe('fold onto downstream decisions', () => {
   })
 })
 
+describe('turn-concluding results', () => {
+  it('publishes nothing after a tool that concludes the turn', async () => {
+    // A concluding result ends the turn at its step. Stray next-step work
+    // reopens that boundary and bills another model request, so the reading
+    // must yield to the conclusion.
+    const { ctx } = await harness({ readings: [10_000] })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'finish',
+      description: 'f',
+      parameters: {},
+      async execute(_args, exec) {
+        exec.concludeTurn()
+        return [{ type: 'text', text: 'done' }]
+      },
+    }))
+    const { notices: found } = await run(ctx, [toolCallResponse('c1', 'finish', {})])
+    expect(found).toEqual([])
+  })
+
+  it('keeps a reading submitted before a later sibling concludes the turn', async () => {
+    // Results commit in model order, so this reading was already in the
+    // next-step inbox when the concluding sibling committed. The turn
+    // conclusion deliberately does not retract submitted next-step work; only
+    // the concluding result's OWN reading is withheld.
+    const { ctx } = await harness({ readings: [10_000] })
+    ctx.tools.register(defineContentToolFixture({
+      name: 'finish',
+      description: 'f',
+      parameters: {},
+      async execute(_args, exec) {
+        exec.concludeTurn()
+        return [{ type: 'text', text: 'done' }]
+      },
+    }))
+    const { notices: found } = await run(ctx, [
+      multiCall([{ id: 'c1', name: 'probe', args: {} }, { id: 'c2', name: 'finish', args: {} }]),
+    ])
+    // One reading — from `probe`. The concluding `finish` adds none of its own.
+    expect(counts(found)).toEqual(['10.0'])
+  })
+})
+
 describe('per-session isolation', () => {
   it('gives each session its own debounce baseline', async () => {
     // One context, one adapter, two sessions created side by side.

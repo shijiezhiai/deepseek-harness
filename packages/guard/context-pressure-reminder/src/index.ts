@@ -14,7 +14,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
-import type { PostToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter/src/types.ts'
 import { retainObservations } from './internal.ts'
@@ -212,8 +212,15 @@ export function apply(ctx: Context, config: Config): void {
    * surface but the current call's result is not yet committed, so the reading
    * understates by roughly this call's output; the next step's reading
    * absorbs that. The `~` prefix and the debounce keep the drift honest.
+   *
+   * A result carrying `concludesTurn` ends the turn at its step, and stray
+   * next-step work reopens that boundary: the inbox drains by running another
+   * model request. Publishing there would bill a whole extra request to say
+   * nothing the caller still needs, so the reading yields to the conclusion.
+   * The step stays spent, because a sibling result of the same batch may still
+   * conclude the turn.
    */
-  function observe(exec: ToolExecution): UserMessage | undefined {
+  function observe(exec: ToolExecution, result: ToolExecutionResult): UserMessage | undefined {
     // A direct `ctx.tools.execute()` caller has no agent, hence no session to
     // read and no model to inform.
     const agent = exec.agent
@@ -226,8 +233,9 @@ export function apply(ctx: Context, config: Config): void {
     const key = step === undefined ? undefined : `${step.turn}/${step.step}`
     if (key !== undefined && state.consideredStepKey === key) return undefined
     // The step is spent either way: a debounced step must not retry on every
-    // sibling result of the same parallel batch.
+    // sibling result of the same parallel batch, and neither must a concluding one.
     state.consideredStepKey = key
+    if (result.concludesTurn === true) return undefined
 
     const measurement: TokenMeasurement = mounted.measure(session)
     if (!shouldPublish(state.publishedTokens, measurement.totalTokens, minDeltaRatio)) return undefined
@@ -245,8 +253,8 @@ export function apply(ctx: Context, config: Config): void {
   // gets the reading. The loop appends it to the next-step inbox, which places
   // it after every tool result of this step, never between a call and its
   // result.
-  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
-    const reading = observe(exec)
+  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
+    const reading = observe(exec, result)
     const downstream = await next()
     if (reading === undefined) return downstream
     if (downstream.kind === 'block') {

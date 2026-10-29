@@ -72,6 +72,7 @@ import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import * as ToolCompact from '@deepseek-ai/dsh-tool-compact'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
 import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
@@ -639,6 +640,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
       'All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-compact',
+    dir: 'tool-compact',
+    source: 'packages/compaction/tool-compact/src/index.ts',
+    requires: ['ctx.tools', 'a compaction backend that serves requests (execution time)'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolCompact)
+    },
+    note:
+      'compact_context only requests; the acknowledgement carries no analysis and the outcome arrives from the backend on the following step as its own user message. `focus` is recorded on the call and does not yet reach the summarizer.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-todo',

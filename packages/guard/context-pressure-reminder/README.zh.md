@@ -18,7 +18,7 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
 - [已知限制与延后工作](#known-limitations-and-deferred-work)
-- [开发者注记](#dev-note)
+- [开发备注](#dev-note)
 
 -----
 
@@ -155,15 +155,12 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 
 #### 模型看到什么
 
-工具步让测量值变动后，多出一条 user 角色消息：
+工具步让测量值变动后，多出一条 user 角色消息。第一行是路由未公布窗口时的纯计数读数；第二行在路由公布窗口后加上占比：
+
+##### 读数
 
 ```markdown
 [context: ~48.2k tokens]
-```
-
-或者，当路由公布了窗口：
-
-```markdown
 [context: ~48.2k/200k tokens · 24%]
 ```
 
@@ -179,13 +176,14 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **结论性工具之后不读** —— 带 `concludesTurn` 的结果会在该步结束本轮，任何残留的 next-step 工作都会重开这个边界、再跑一次模型请求。在那里发布等于多花一次请求去说一件本轮已不需要的事，所以读数让位于结论。同一批中更早的兄弟调用已提交的读数会保留。
 - **不在 assistant 调用与其自身结果之间读** —— 某一步的工具把上下文撑爆，要到下一步才报告。补上这一缺口需要在工具流水线之外再加一个 surface 生产者。
 - **不做 subagent 汇总** —— 每个 agent 的读数只覆盖它自己的 surface；父 agent 看不到子 agent 的消耗。
 - **缺 token meter 不致命** —— guard 警告一次并不发布任何内容，而不是让本轮失败。
 - **百分比依赖路由元数据** —— 路由不公布窗口的模型只能拿到计数。
 
 <a id="dev-note"></a>
-### 开发者注记
+### 开发备注
 
 <details>
 <summary>给维护者的工作上下文 — 点击展开</summary>

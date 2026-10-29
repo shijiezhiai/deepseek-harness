@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/guard/context-pressure-reminder/README.md
-README.md: 585c696ae04b80e63015a3388449d1b1bd06046f
-README.zh.md: d5859c7780567326c8ba23f7c8804a292797a9b5
+README.md: 27b2fcf78c2a95c413ba21ffaf300262d4811dd8
+README.zh.md: e68ea55b346741e2bcfcee9cbeb56f291f9ec814
