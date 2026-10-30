@@ -104,6 +104,14 @@ class BashOutput3(TypedDict):
     stderr: BashOutput3Stderr
     sandbox: NotRequired[BashOutput3Sandbox]
 
+class CompactContextArgs(TypedDict):
+    # One sentence naming what the summary must preserve. Omit when nothing specific matters.
+    focus: NotRequired[str]
+    # Additional keys beyond those declared are allowed.
+
+class CompactContextOutput(TypedDict):
+    kind: Literal["requested"]
+
 class CreateGoalArgs(TypedDict):
     # The concrete completion objective inferred from the direct human request.
     objective: str
@@ -506,6 +514,8 @@ class WriteOutput(TypedDict):
 class Tools(Protocol):
     async def bash(self, args: BashArgs) -> BashOutput1 | BashOutput2 | BashOutput3:
         """Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; pass `workdir` instead of using `cd`. Managed `$DSH_*` variables expose current harness environment facts. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `${VAR:?}`. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way."""
+    async def compact_context(self, args: CompactContextArgs) -> CompactContextOutput:
+        """Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again)."""
     async def create_goal(self, args: CreateGoalArgs) -> CreateGoalOutput1 | CreateGoalOutput2:
         """Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work."""
     async def edit(self, args: EditArgs) -> EditOutput:

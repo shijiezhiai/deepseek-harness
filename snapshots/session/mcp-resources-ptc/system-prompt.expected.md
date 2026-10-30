@@ -75,6 +75,11 @@ interface ToolArgsMap {
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
+  /** Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again). */
+  compact_context: {
+    /** One sentence naming what the summary must preserve. Omit when nothing specific matters. */
+    focus?: string;
+  } & Record<string, JsonValue>;
   /** Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say "goal"; not for single-turn work. */
   create_goal: {
     /** The concrete completion objective inferred from the direct human request. */
@@ -326,6 +331,9 @@ interface ToolOutputMap {
       enforcement?: string;
       runnerFailed?: boolean;
     };
+  };
+  compact_context: {
+    kind: "requested";
   };
   create_goal: {
     goal: null;
