@@ -2,7 +2,7 @@
   "initial": [
     {
       "name": "ask_user_question",
-      "description": "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding.",
+      "description": "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. An answer item with empty selected and no custom means the user skipped that question: continue without it, do not ask it again, and do not treat the skip as permission.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -109,6 +109,19 @@
       }
     },
     {
+      "name": "compact_context",
+      "description": "Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "type": "string",
+            "description": "One sentence naming what the summary must preserve. Omit when nothing specific matters."
+          }
+        }
+      }
+    },
+    {
       "name": "create_goal",
       "description": "Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work.",
       "parameters": {
@@ -167,22 +180,6 @@
           "file_path",
           "old_string",
           "new_string"
-        ]
-      }
-    },
-    {
-      "name": "exit_plan_mode",
-      "description": "Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "plan": {
-            "type": "string",
-            "description": "The complete plan, as markdown, starting with a # heading that names it."
-          }
-        },
-        "required": [
-          "plan"
         ]
       }
     },

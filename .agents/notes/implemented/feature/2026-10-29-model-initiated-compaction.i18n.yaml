@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-29-model-initiated-compaction.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-29-model-initiated-compaction.md
+/agent-note-model-initiated-compaction:
+  en: 9c15db0dcadfd209
+  zh: 082c29ccfe02cf4b
+/agent-note-model-initiated-compaction/problem:
+  en: c5d30c59a4f9abea
+  zh: 57f70b54d1dd3922
+/agent-note-model-initiated-compaction/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-model-initiated-compaction/decision/1-the-request-is-the-tool-call-and-the-answer-is-a-later-notice:
+  en: a21e29cacc7a1c3e
+  zh: 582e4b4070d8991f
+/agent-note-model-initiated-compaction/decision/2-three-gates-all-costing-nothing-to-check:
+  en: 3bbc0632837d3343
+  zh: a5b58853e5b00817
+/agent-note-model-initiated-compaction/decision/3-nothing-is-added-to-the-service-definition:
+  en: 64745a46425fec6e
+  zh: 252bda0c75be55ea
+/agent-note-model-initiated-compaction/alternatives-considered:
+  en: 4d341e3c478c2309
+  zh: 0b3253db775d7a9d
+/agent-note-model-initiated-compaction/consequences:
+  en: e9b0853bcacb6726
+  zh: 1eaa146328424c22
+/agent-note-model-initiated-compaction/testing:
+  en: 420e9a814efa29e0
+  zh: a4b53aa2a2704f47

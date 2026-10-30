@@ -46,6 +46,19 @@
       }
     },
     {
+      "name": "compact_context",
+      "description": "Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "type": "string",
+            "description": "One sentence naming what the summary must preserve. Omit when nothing specific matters."
+          }
+        }
+      }
+    },
+    {
       "name": "create_goal",
       "description": "Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work.",
       "parameters": {
@@ -67,13 +80,13 @@
     },
     {
       "name": "create_worktree",
-      "description": "Create a new Git branch and worktree from a local commit, branch, or tag, then change this session's working directory to it. Defaults to HEAD and a generated name. Uncommitted files stay in the source checkout. Existing names fail. Use working_directory with cd to leave; the checkout and branch remain.",
+      "description": "Create a new Git branch and worktree from a local commit, branch, or tag, then change this session's working directory to it. Uncommitted files stay in the source checkout. Existing names fail. Use working_directory with cd to leave; the checkout and branch remain.",
       "parameters": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "New branch name, also used as the checkout directory. Omit to generate a unique name."
+            "description": "New branch name, also used as the checkout directory: a few lowercase words joined by hyphens that describe the task, such as fix-login-retry. Omit to generate a unique name."
           },
           "from": {
             "type": "string",
@@ -121,22 +134,6 @@
           "file_path",
           "old_string",
           "new_string"
-        ]
-      }
-    },
-    {
-      "name": "exit_plan_mode",
-      "description": "Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "plan": {
-            "type": "string",
-            "description": "The complete plan, as markdown, starting with a # heading that names it."
-          }
-        },
-        "required": [
-          "plan"
         ]
       }
     },

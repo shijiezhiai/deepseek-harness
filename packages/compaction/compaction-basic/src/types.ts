@@ -36,12 +36,38 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
   model: string
 }
 
+/** Policy for serving a model-requested compaction. */
+export interface RequestPolicyConfig {
+  /**
+   * Lowest occupancy, as a fraction of the window, at which a model request is
+   * served. Below it compaction would discard working state the model still
+   * needs, so the request is declined. Defaults to `0.10`.
+   */
+  minContextRatio?: number
+  /** Model-served compactions allowed per turn. Defaults to `2`. */
+  maxPerTurn?: number
+}
+
+/** Validated immutable request policy. */
+export interface ResolvedRequestPolicy {
+  readonly minContextRatio: number
+  readonly maxPerTurn: number
+}
+
 /** Basic compaction configuration with an optional exact-target policy table. */
 export interface BasicCompactionConfig extends CompactionPolicyConfig {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
   modelPolicies?: ModelCompactPolicyConfig[]
   /** Enable automatic step-boundary pressure and overflow-recovery listeners. Defaults to `true`. */
   auto?: boolean
+  /**
+   * Whether a model-requested compaction is served at all. Defaults to `true`
+   * when this backend sees `compact_context` calls; set false to leave requests
+   * unanswered in compositions that keep the tool mounted for other reasons.
+   */
+  serveRequests?: boolean
+  /** Limits on serving model requests; see {@link RequestPolicyConfig}. */
+  requestPolicy?: RequestPolicyConfig
 }
 
 /** Exactly one validated retention form. */
@@ -64,6 +90,8 @@ interface ResolvedPolicyFields {
 export type ResolvedConfig = ResolvedPolicyFields & ResolvedRetention & {
   readonly modelPolicies: readonly Readonly<ModelCompactPolicyConfig>[]
   readonly auto: boolean
+  readonly serveRequests: boolean
+  readonly requestPolicy: ResolvedRequestPolicy
 }
 
 /** Fully merged policy for one routed conversation target, before capacity scaling. */

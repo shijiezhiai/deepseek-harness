@@ -1,0 +1,28 @@
+# Keyless replay counterpart of context-pressure-reminder's cordis.yml: the same
+# guard configuration, with the replay adapter in place of the live DeepSeek
+# provider. `contextWindow: 128000` gives the reading its `/128.0k · N%` shape.
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  disabled: true
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- id: context-pressure-reminder
+  name: '@deepseek-ai/dsh-context-pressure-reminder'
+  config:
+    minDeltaRatio: 0
+
+- insert:
+    - id: llm-replay
+      name: '../../../packages/test-support/llm-replay/src/index.ts'
+      config:
+        providers:
+          - id: deepseek-official
+            name: DeepSeek
+            models:
+              - id: deepseek-v4-flash
+                contextWindow: 128000

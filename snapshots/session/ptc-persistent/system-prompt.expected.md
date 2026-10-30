@@ -9,7 +9,7 @@ Verify your work by running the code or tests. Keep answers brief and factual.
 
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 
-Use the read tool — not shell commands like cat, sed, head, or tail — to inspect text files. Use offset and limit to read a line range or continue a large file.
+Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.
 
 Read an existing file before overwriting it with write (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 
@@ -33,9 +33,9 @@ Start independent delegations with `subagent` or `subagent_fork` together in one
 
 ## Writing code for run_code
 
-`run_code` takes two required arguments: `description`, a short summary of what the program does, and `code`, the program to execute. The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly. When no separate `bash` schema is supplied, invoke a declared `bash` binding inside `run_code`:
+`run_code` takes two required arguments: `code`, the program to execute, and `description`, a short summary of what the program does. The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly. When no separate `bash` schema is supplied, invoke a declared `bash` binding inside `run_code`:
 
-`run_code({ description: "Show current directory", code: "console.log(await tools.bash({ description: 'Show current directory', command: 'pwd' }))" })`
+`run_code({ code: "console.log(await tools.bash({ description: 'Show current directory', command: 'pwd' }))", description: "Show current directory" })`
 
 Inside the program:
 
@@ -67,6 +67,11 @@ interface ToolArgsMap {
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access. Use the language of the user’s current request. */
     justification?: string;
   } & Record<string, JsonValue>;
+  /** Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again). */
+  compact_context: {
+    /** One sentence naming what the summary must preserve. Omit when nothing specific matters. */
+    focus?: string;
+  } & Record<string, JsonValue>;
   /** Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say "goal"; not for single-turn work. */
   create_goal: {
     /** The concrete completion objective inferred from the direct human request. */
@@ -88,11 +93,6 @@ interface ToolArgsMap {
     sandbox_permissions?: "workspace-write" | "danger-full-access";
     /** Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access. Use the language of the user’s current request. */
     justification?: string;
-  } & Record<string, JsonValue>;
-  /** Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again. */
-  exit_plan_mode: {
-    /** The complete plan, as markdown, starting with a # heading that names it. */
-    plan: string;
   } & Record<string, JsonValue>;
   /** Read the current session goal, including the id and revision that update_goal requires. */
   get_goal: Record<string, JsonValue>;
@@ -307,6 +307,9 @@ interface ToolOutputMap {
       runnerFailed?: boolean;
     };
   };
+  compact_context: {
+    kind: "requested";
+  };
   create_goal: {
     goal: null;
   } | {
@@ -329,9 +332,6 @@ interface ToolOutputMap {
     path: string;
     before: string;
     after: string;
-  };
-  exit_plan_mode: {
-    approved: boolean;
   };
   get_goal: {
     goal: null;
@@ -510,6 +510,7 @@ interface ToolOutputMap {
       url: string;
       title?: string;
       snippet?: string;
+      summary?: string;
       publishedAt?: string;
     }[];
     truncated: boolean;

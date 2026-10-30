@@ -1,0 +1,10 @@
+version: 1
+scenario: context-pressure-nudge
+profile: headless
+composition: context-pressure-nudge
+recording: authored
+header:
+  class: context-pressure-reminder
+  pin: true
+  systemPromptSource: context-pressure-reminder
+  toolSchemasSource: context-pressure-reminder

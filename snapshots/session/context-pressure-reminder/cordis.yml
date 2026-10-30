@@ -1,0 +1,8 @@
+# Live composition for the context-pressure guard snapshot: the shipped base
+# bundle already mounts the guard, so this patch only configures it. The
+# scenario publishes on every step so the fixture shows one reading per tool
+# call instead of the default debounce.
+- id: context-pressure-reminder
+  name: '@deepseek-ai/dsh-context-pressure-reminder'
+  config:
+    minDeltaRatio: 0

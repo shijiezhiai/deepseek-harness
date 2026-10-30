@@ -1,0 +1,67 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/compaction/tool-compact/README.md
+/:
+  en: 71f1eae42c4d4bd6
+  zh: 9870aeeb767c709c
+/deepseek-ai-dsh-tool-compact:
+  en: 2d5dda7a67ac564a
+  zh: 230860c07b47d400
+/deepseek-ai-dsh-tool-compact/summary:
+  en: ada916912cb81dee
+  zh: 35e9eb39f819d6a5
+/deepseek-ai-dsh-tool-compact/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 1db86285abf6c499
+/deepseek-ai-dsh-tool-compact/use-this-package:
+  en: ef67b556a948a313
+  zh: fd5ca995991b7848
+/deepseek-ai-dsh-tool-compact/use-this-package/using-the-tool:
+  en: 16feb3364e4bb25f
+  zh: 0fa109ed2188bd65
+/deepseek-ai-dsh-tool-compact/use-this-package/what-the-model-reads:
+  en: ead9d82c7c1f9790
+  zh: 010229e38fccdfb2
+/deepseek-ai-dsh-tool-compact/use-this-package/composing-the-tool:
+  en: 157e5590d9e6f575
+  zh: 7857beae3d580ac3
+/deepseek-ai-dsh-tool-compact/use-this-package/tuning-the-gates:
+  en: 1b8ce16c11fc8a77
+  zh: c73917bb6f60462e
+/deepseek-ai-dsh-tool-compact/understand-the-implementation:
+  en: f0595af0c730cfed
+  zh: 38645d950ebf4016
+/deepseek-ai-dsh-tool-compact/understand-the-implementation/design-philosophy:
+  en: 71ab91c603a7a1f5
+  zh: 45efd2d015cf5633
+/deepseek-ai-dsh-tool-compact/understand-the-implementation/answering-once:
+  en: 8f556681c63bf239
+  zh: cfac63949fc347de
+/deepseek-ai-dsh-tool-compact/understand-the-implementation/source-map:
+  en: 7c0ab3bb0525cc00
+  zh: 56fe448f095b36b0
+/deepseek-ai-dsh-tool-compact/further-exploration:
+  en: 65dc90f139f008be
+  zh: b8f8482483cef0a4
+/deepseek-ai-dsh-tool-compact/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-tool-compact/model-experience/deciding-to-condense:
+  en: 2a55eb20d3e60ce2
+  zh: 40371cfcb1c8102f
+/deepseek-ai-dsh-tool-compact/model-experience/deciding-to-condense/what-the-model-sees:
+  en: 64b6b56228ef145e
+  zh: a7ae66212965acf1
+/deepseek-ai-dsh-tool-compact/model-experience/deciding-to-condense/token-effect:
+  en: 9c6abc3b5a30e56f
+  zh: b85b041a30156f1a
+/deepseek-ai-dsh-tool-compact/model-experience/deciding-to-condense/kv-cache-effect:
+  en: 8303d65cbc1317fb
+  zh: 9b83fe6db0066525
+/deepseek-ai-dsh-tool-compact/known-limitations-and-deferred-work:
+  en: 0cf0a965a214ec65
+  zh: c07d40ff20aa0bb7
+/deepseek-ai-dsh-tool-compact/known-limitations-and-deferred-work/dev-note:
+  en: b516be129a74cec7
+  zh: 1ce44b0ee2d70aed
