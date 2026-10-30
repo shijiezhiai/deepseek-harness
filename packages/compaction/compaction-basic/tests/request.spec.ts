@@ -147,6 +147,24 @@ function seenText(loop: Harness): string[] {
     .join('')))
 }
 
+
+/** Attach one reading to every tool result, the way a post-execute guard does. */
+async function mountReadingPlugin(ctx: Context): Promise<void> {
+  await ctx.plugin({
+    name: 'reading-plugin',
+    apply: (inner: Context) => {
+      inner.on('tools/post-execute', async (_exec, _result, next) => {
+        const decision = await next()
+        const reading = createUserMessage({
+          content: [{ type: 'text', text: '[context: ~8.3k/20.0k tokens \u00b7 41%]' }],
+          source: { kind: 'plugin', plugin: 'context-pressure-reminder', form: 'notice', summary: 'context pressure' },
+        })
+        return { ...decision, additionalContexts: [...decision.additionalContexts ?? [], reading] }
+      })
+    },
+  })
+}
+
 describe('a model compaction request', () => {
   it('compacts before the next step and reports what it folded', async () => {
     const loop = await harness(LOW_FLOOR)
@@ -198,6 +216,26 @@ describe('a model compaction request', () => {
     expect(starts).toHaveLength(1)
     expect(loop.engine.calls).toHaveLength(1)
     expect(seenText(loop).some(text => text.includes('Compaction finished:'))).toBe(true)
+  })
+
+  it('keeps the messages the loop already claimed for the step', async () => {
+    // The reading a plugin attaches to a tool result lands on next-step AFTER
+    // the step returns, so it is pending exactly when the compaction request is
+    // served at the following step boundary. `claim()` has already taken it off
+    // the inbox by then, so a decision carrying only this listener's notice
+    // would drop it silently.
+    const loop = await harness(LOW_FLOOR)
+    await mountReadingPlugin(loop.ctx)
+    await seed(loop)
+    loop.adapter.script.push('compact', 'text')
+    loop.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'tidy up' }],
+      source: { kind: 'user' },
+    }))
+    await loop.agent.whenIdle()
+
+    expect(seenText(loop).some(text => text.includes('41%'))).toBe(true)
+    expect(seenText(loop).some(text => text.startsWith('Compaction finished:'))).toBe(true)
   })
 
   it('declines the request once the per-turn limit is spent', async () => {

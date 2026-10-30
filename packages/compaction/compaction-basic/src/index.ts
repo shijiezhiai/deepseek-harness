@@ -169,11 +169,11 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
 
     ctx.on('agent/pre-step', async (
-      { agent, signal },
+      { agent, messages, signal },
       next,
     ): Promise<PreStepDecision> => {
       if (!signal.aborted && this.config.serveRequests) {
-        const served = await this.serveModelRequest(agent, signal)
+        const served = await this.serveModelRequest(agent, messages, signal)
         if (served !== undefined) return served
       }
       if (!signal.aborted) {
@@ -309,11 +309,13 @@ export class BasicCompactionEngine extends CompactionEngine {
    * so the model is told once rather than on every following step.
    *
    * @param agent - agent whose log carries the request.
+   * @param claimed - messages the loop removed from the inbox for this step.
    * @param signal - live turn cancellation signal.
    * @returns the pre-step decision that answers the request, or undefined.
    */
   private async serveModelRequest(
     agent: Agent,
+    claimed: readonly UserMessage[],
     signal: AbortSignal,
   ): Promise<PreStepDecision | undefined> {
     const session = agent.session
@@ -328,10 +330,15 @@ export class BasicCompactionEngine extends CompactionEngine {
       servedThisTurn: history.servedRequests,
       config: this.config.requestPolicy,
     }
-    const declined = (reason: RequestRefusal): PreStepDecision => ({
+    // `claimed` is already OFF the inbox, so a decision that omits it drops those
+    // messages for good. Every notice below therefore follows them rather than
+    // replacing the step's admitted messages.
+    const answer = (text: string, summary: string): PreStepDecision => ({
       kind: 'enter',
-      messages: [this.noticeMessage(renderRefusal(reason, input), 'compaction declined')],
+      messages: [...claimed, this.noticeMessage(text, summary)],
     })
+    const declined = (reason: RequestRefusal): PreStepDecision =>
+      answer(renderRefusal(reason, input), 'compaction declined')
 
     const decision = evaluateRequestGate(input)
     if (decision.kind === 'refuse') return declined(decision.reason)
@@ -359,17 +366,17 @@ export class BasicCompactionEngine extends CompactionEngine {
     try {
       result = await this.compactRegion(range.start, range.end, agent, signal)
     } catch (error: unknown) {
-      return { kind: 'enter', messages: [this.noticeMessage(
+      return answer(
         `Compaction failed and changed nothing: ${error instanceof Error ? error.message : String(error)}`,
         'compaction failed',
-      )] }
+      )
     }
     const reduced = ` The context is now ~${this.ctx.tokenMeter.measure(session).totalTokens} estimated tokens.`
-    return { kind: 'enter', messages: [this.noticeMessage(
+    return answer(
       `Compaction finished: ${result.shadowedSeqs.length} earlier nodes were folded into a summary `
         + `of ~${result.shadowedTokenCount} tokens.${reduced} Continue the work.`,
       'compaction finished',
-    )] }
+    )
   }
 
   /** Render a backend answer to the model as an ordinary notice. */
