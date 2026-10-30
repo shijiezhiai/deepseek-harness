@@ -11,7 +11,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'context-pressure-reminder': { kind: 'context-pressure-reminder' } & ContextFormed
+  }
+}
+
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
@@ -84,11 +90,11 @@ export const Config: z<Config> = z.object({
 })
 
 /**
- * The `{kind:'plugin'}` source stamped on every reading this guard publishes —
- * the label is load-bearing (an unlabeled context would render as a user
- * prompt in derived history).
+ * The source stamped on every reading this guard publishes — the label is
+ * load-bearing (an unlabeled context would render as a user prompt in derived
+ * history).
  */
-const PLUGIN_SOURCE = { kind: 'plugin', plugin: 'context-pressure-reminder' } as const satisfies MessageSource
+const PLUGIN_SOURCE = { kind: 'context-pressure-reminder' } as const
 
 /** The resolved numeric configuration shared by both listeners. */
 interface ResolvedConfig {

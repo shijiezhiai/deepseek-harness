@@ -4,7 +4,7 @@ import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -100,7 +100,7 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
 
 /** Every injected-context message in the log, flattened to its joined text. */
 function notices(agent: Agent): string[] {
-  return [...agent.session.events]
+  return [...agent.session.snapshotEvents()]
     .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message' && e.data.source.kind !== 'user')
     .map(e => e.data.content.map(block => block.type === 'text' ? block.text : '').join('|'))
 }
@@ -109,7 +109,7 @@ function notices(agent: Agent): string[] {
 async function run(ctx: Context, script: StreamChunk[][]): Promise<{ agent: Agent; notices: string[] }> {
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
-  const agent = ctx.agentLoop.create(SessionId(`a${Math.random().toString(36).slice(2)}`), { provider: 'mock', model: 'mock' })
+  const agent = await ctx.agentLoop.create(SessionId(`a${Math.random().toString(36).slice(2)}`), { provider: 'mock', model: 'mock' })
   agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
   await waitForIdle(ctx, agent)
   return { agent, notices: notices(agent) }
@@ -209,7 +209,7 @@ describe('fold onto downstream decisions', () => {
     const { ctx } = await harness({ readings: [10_000] })
     const extra = createUserMessage({
       content: [{ type: 'text', text: 'later' }],
-      source: { kind: 'plugin', plugin: 'downstream' },
+      source: { kind: 'downstream' },
     })
     ctx.on('tools/post-execute', async () => ({
       kind: 'accept',
@@ -272,8 +272,8 @@ describe('per-session isolation', () => {
       toolCallResponse('c2', 'probe', {}), textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const first = ctx.agentLoop.create(SessionId('s1'), { provider: 'mock', model: 'mock' })
-    const second = ctx.agentLoop.create(SessionId('s2'), { provider: 'mock', model: 'mock' })
+    const first = await ctx.agentLoop.create(SessionId('s1'), { provider: 'mock', model: 'mock' })
+    const second = await ctx.agentLoop.create(SessionId('s2'), { provider: 'mock', model: 'mock' })
     first.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, first)
     second.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))

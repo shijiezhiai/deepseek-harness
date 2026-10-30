@@ -322,6 +322,8 @@ describe('compact configuration and defaults', () => {
       maxOverflowRetries: 1,
       modelPolicies: [],
       auto: true,
+      serveRequests: true,
+      requestPolicy: { minContextRatio: 0.1, maxPerTurn: 2 },
     })
     expect(Object.isFrozen(resolved)).toBe(true)
   })

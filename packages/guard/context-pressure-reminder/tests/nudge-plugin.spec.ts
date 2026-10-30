@@ -3,9 +3,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import * as ContextPressureReminder from '@deepseek-ai/dsh-context-pressure-reminder'
@@ -59,20 +59,20 @@ function replay(script: StreamChunk[][]): StreamChunk[][] {
 function meterStub(options: {
   readings: number[]
   toolPrices?: number[]
-}): { measure(session: { events: readonly { type: string; seq: number }[] }): TokenMeasurement } {
+}): { measure(session: Session): TokenMeasurement } {
   let index = 0
   return {
     measure(session): TokenMeasurement {
       const totalTokens = options.readings[Math.min(index, options.readings.length - 1)] ?? 0
       index += 1
-      const toolSeqs = session.events.filter(event => event.type === 'tool/result').map(event => event.seq)
+      const toolSeqs = session.snapshotEvents().filter(event => event.type === 'tool/result').map(event => event.seq)
       return {
         totalTokens,
         nodes: toolSeqs.map((seq, position) => ({
           seq,
           tokens: options.toolPrices?.[position] ?? 100,
         })),
-      } as TokenMeasurement
+      } as unknown as TokenMeasurement
     },
   }
 }
@@ -116,7 +116,10 @@ async function harness(options: {
     async execute() { return [{ type: 'text', text: 'ok' }] },
   }))
   if (options.mountMeter ?? true) {
-    const meter = meterStub({ readings: options.readings, toolPrices: options.toolPrices })
+    const meter = meterStub({
+      readings: options.readings,
+      ...options.toolPrices === undefined ? {} : { toolPrices: options.toolPrices },
+    })
     await ctx.plugin({
       name: 'token-meter-stub',
       apply(inner: Context) { inner.provide('tokenMeter', meter as never) },
@@ -134,7 +137,7 @@ async function harness(options: {
  */
 async function run(ctx: Context, script: StreamChunk[][], adapter = new WindowedAdapter(script)): Promise<Agent> {
   ctx.llm.registerAdapter(['mock'], adapter)
-  const agent = ctx.agentLoop.create(SessionId(`n${Math.random().toString(36).slice(2)}`), {
+  const agent = await ctx.agentLoop.create(SessionId(`n${Math.random().toString(36).slice(2)}`), {
     provider: 'mock',
     model: 'mock',
   })
@@ -160,8 +163,8 @@ async function settle(ctx: Context, agent: Agent, text: string): Promise<void> {
 
 /** Every message this guard published, in log order. */
 function published(agent: Agent): string[] {
-  return [...agent.session.events]
-    .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message' && e.data.source.kind === 'plugin')
+  return [...agent.session.snapshotEvents()]
+    .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message' && e.data.source.kind === 'context-pressure-reminder')
     .map(e => e.data.content.map(block => block.type === 'text' ? block.text : '').join('|'))
 }
 
@@ -279,12 +282,17 @@ describe('ordering against other listeners', () => {
           ...decision.messages,
           createUserMessage({
             content: [{ type: 'text', text: 'downstream-context' }],
-            source: { kind: 'plugin', plugin: 'downstream' },
+            source: { kind: 'downstream' },
           }),
         ],
       }
     })
-    const order = published(await run(ctx, replay(MEASURED_SCRIPT)))
+    // Every published message, not just this guard's: the assertion is about
+    // where the nudge lands relative to a listener that does not own a kind of
+    // its own.
+    const order = [...(await run(ctx, replay(MEASURED_SCRIPT))).session.snapshotEvents()]
+      .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message')
+      .map(e => e.data.content.map(block => block.type === 'text' ? block.text : '').join('|'))
     const downstream = order.findIndex(text => text.includes('downstream-context'))
     const nudge = order.findIndex(text => text.includes('overshoot the window'))
     expect(downstream).toBeGreaterThanOrEqual(0)

@@ -30,7 +30,7 @@ export const COMPACT_TOOL_NAME = 'compact_context'
  * recognised by a notice the answering backend appended, so the fold needs the
  * name rather than a private marker the backend would have to invent.
  */
-export const COMPACT_ANSWER_PLUGIN = 'compaction-basic'
+export const COMPACT_ANSWER_KIND = 'compaction-basic'
 
 /** One pending model request, derived from the log. */
 export interface CompactionRequest {
@@ -64,8 +64,8 @@ function readFocus(argumentsJson: string): string | undefined {
 /** Whether this event is the answering backend's notice to the model. */
 function isAnswerNotice(event: { type: string; data: unknown }): boolean {
   if (event.type !== 'user/message') return false
-  const source = (event.data as { source?: { kind?: string; plugin?: string } }).source
-  return source?.kind === 'plugin' && source.plugin === COMPACT_ANSWER_PLUGIN
+  const source = (event.data as { source?: { kind?: string } }).source
+  return source?.kind === COMPACT_ANSWER_KIND
 }
 
 /**
@@ -87,7 +87,7 @@ function isAnswerNotice(event: { type: string; data: unknown }): boolean {
 export function pendingCompactionRequest(session: Session): CompactionRequest | undefined {
   let pending: CompactionRequest | undefined
   let answeredThisTurn = false
-  for (const event of session.events) {
+  for (const event of session.snapshotEvents()) {
     switch (event.type) {
       case 'tool/call': {
         if (event.data.name !== COMPACT_TOOL_NAME) break

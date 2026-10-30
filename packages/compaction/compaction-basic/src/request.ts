@@ -38,7 +38,7 @@ export function turnCompactionHistory(session: Session, turn: number): TurnCompa
   let compactions = 0
   let servedRequests = 0
   let openRequest = false
-  for (const event of session.events) {
+  for (const event of session.snapshotEvents()) {
     if (event.type === 'tool/call') {
       if (event.data.turn === turn && event.data.name === COMPACT_TOOL_NAME && !openRequest) {
         openRequest = true

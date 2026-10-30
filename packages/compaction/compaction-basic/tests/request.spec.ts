@@ -13,7 +13,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, LlmResolvedModelInfo, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -49,7 +49,7 @@ class RecordingEngine extends BasicCompactionEngine {
  * `compact_context` call; `'text'` answers with prose and ends the turn.
  */
 class ScriptedAdapter extends LlmAdapter {
-  readonly requests: Message[][] = []
+  readonly requests: RequestMessage[][] = []
   script: ('text' | 'compact')[] = []
 
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
@@ -61,7 +61,7 @@ class ScriptedAdapter extends LlmAdapter {
     })
   }
 
-  override async * stream(options: { messages: readonly Message[] }): AsyncIterable<StreamChunk> {
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push([...options.messages])
     const next = this.script.shift() ?? 'text'
     if (next === 'compact') {
@@ -116,7 +116,7 @@ async function harness(
     ...pressure ? { thresholdRatio: 0.001, retainRatio: 0.0005 } : {},
     ...requestPolicy === undefined ? {} : { requestPolicy },
   })
-  const agent = ctx.agentLoop.create(SessionId(`request-${++serial}`), {
+  const agent = await ctx.agentLoop.create(SessionId(`request-${++serial}`), {
     provider: MODEL,
     model: MODEL,
   })
@@ -135,7 +135,7 @@ async function seed(loop: Harness, script: ('text' | 'compact')[] = ['text']): P
 
 /** Text blocks of every derived model-visible message, in request order. */
 function derivedText(session: Session): string[] {
-  return session.deriveMessages().map((message: Message) => message.content
+  return session.deriveMessages().map(message => message.content
     .map(block => block.type === 'text' ? block.text : '')
     .join(''))
 }
@@ -157,7 +157,7 @@ async function mountReadingPlugin(ctx: Context): Promise<void> {
         const decision = await next()
         const reading = createUserMessage({
           content: [{ type: 'text', text: '[context: ~8.3k/20.0k tokens \u00b7 41%]' }],
-          source: { kind: 'plugin', plugin: 'context-pressure-reminder', form: 'notice', summary: 'context pressure' },
+          source: { kind: 'context-pressure-reminder', form: 'notice', summary: 'context pressure' },
         })
         return { ...decision, additionalContexts: [...decision.additionalContexts ?? [], reading] }
       })
@@ -177,7 +177,7 @@ describe('a model compaction request', () => {
     await loop.agent.whenIdle()
 
     expect(loop.engine.calls).toHaveLength(1)
-    expect(loop.agent.session.events.some(event => event.type === 'compaction/start')).toBe(true)
+    expect(loop.agent.session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(true)
     expect(seenText(loop).some(text => text.startsWith('Compaction finished:'))).toBe(true)
   })
 
@@ -211,7 +211,7 @@ describe('a model compaction request', () => {
     }))
     await loop.agent.whenIdle()
 
-    const starts = loop.agent.session.events.filter(event => event.type === 'compaction/start')
+    const starts = loop.agent.session.snapshotEvents().filter(event => event.type === 'compaction/start')
     // The automatic one is the only compaction: the summarizer ran once.
     expect(starts).toHaveLength(1)
     expect(loop.engine.calls).toHaveLength(1)
@@ -277,7 +277,7 @@ describe('a model compaction request', () => {
     }))
     await loop.agent.whenIdle()
     expect(loop.engine.calls).toHaveLength(0)
-    expect(loop.agent.session.events.some(event => event.type === 'compaction/start')).toBe(false)
+    expect(loop.agent.session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
     expect(derivedText(loop.agent.session)).not.toContain(expect.stringContaining('Compaction not started'))
   })
 })

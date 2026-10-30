@@ -5,6 +5,8 @@
  * @module @deepseek-ai/dsh-context-pressure-reminder/internal
  */
 
+import type { SessionSeq } from '@deepseek-ai/dsh-session'
+
 /** What the guard remembers about one session between steps. */
 export interface SessionReadingState {
   /** Identity of the step that owns the most recent tool call. */
@@ -18,7 +20,7 @@ export interface SessionReadingState {
    * The nudge sizes its danger band from their prices, which it reads from the
    * measurement's nodes rather than by re-measuring each result.
    */
-  recentToolSeqs: number[]
+  recentToolSeqs: SessionSeq[]
   /** Occupancy the last nudge announced while inside the band, else undefined. */
   announcedTokens: number | undefined
 }
@@ -29,6 +31,6 @@ export interface SessionReadingState {
  * @param window - how many the band sizes itself from.
  * @returns the tail of `seqs` that can still influence the band.
  */
-export function retainObservations(seqs: readonly number[], window: number): number[] {
+export function retainObservations(seqs: readonly SessionSeq[], window: number): SessionSeq[] {
   return seqs.length <= window ? [...seqs] : seqs.slice(-window)
 }

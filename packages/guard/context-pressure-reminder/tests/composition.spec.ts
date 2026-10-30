@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -52,12 +52,12 @@ describe('real composition through token-meter', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('compose-1'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('compose-1'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
     // 1. The reading left post-execute as a next-step inbox splice...
-    const spliced = [...agent.session.events]
+    const spliced = [...agent.session.snapshotEvents()]
       .filter((e): e is SessionEvent<'agent/inbox/spliced'> => e.type === 'agent/inbox/spliced')
       .flatMap(e => e.data.inserted ?? [])
       .map(message => message.content.map(block => block.type === 'text' ? block.text : '').join(''))
@@ -66,9 +66,9 @@ describe('real composition through token-meter', () => {
     // 2. ...and reached the surface as an ordinary append-form user message
     // with the plugin source intact, so a reader can tell it apart from a
     // human prompt.
-    const onSurface = [...agent.session.events]
+    const onSurface = [...agent.session.snapshotEvents()]
       .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message')
-      .filter(e => e.data.source.kind === 'plugin' && e.data.source.plugin === 'context-pressure-reminder')
+      .filter(e => e.data.source.kind === 'context-pressure-reminder')
     expect(onSurface).toHaveLength(1)
     expect(onSurface[0]?.data.source).toMatchObject({ form: 'notice', summary: 'context pressure' })
 
@@ -84,13 +84,13 @@ describe('real composition through token-meter', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('compose-2'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('compose-2'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    const reading = [...agent.session.events]
+    const reading = [...agent.session.snapshotEvents()]
       .filter((e): e is SessionEvent<'user/message'> => e.type === 'user/message')
-      .find(e => e.data.source.kind === 'plugin' && e.data.source.plugin === 'context-pressure-reminder')
+      .find(e => e.data.source.kind === 'context-pressure-reminder')
     const text = reading?.data.content.map(b => b.type === 'text' ? b.text : '').join('') ?? ''
     // `[context: ~12.3k tokens]` or, below one thousand tokens, `[context: ~320 tokens]`.
     const match = /~([\d.]+)(k?) tokens/.exec(text)

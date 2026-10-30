@@ -7,7 +7,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
-import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { EpochHeader, Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, LlmError } from '@deepseek-ai/dsh-llm'
@@ -29,12 +28,18 @@ import {
   selectCompactableRange,
 } from './region.ts'
 import { summarizeWithLlm } from './summarizer.ts'
-import { COMPACT_ANSWER_PLUGIN, pendingCompactionRequest } from '@deepseek-ai/dsh-tool-compact/request'
+import { COMPACT_ANSWER_KIND, pendingCompactionRequest } from '@deepseek-ai/dsh-tool-compact/request'
 import { evaluateRequestGate, renderRefusal } from './gate.ts'
 import type { RequestGateInput, RequestRefusal } from './gate.ts'
 import { turnCompactionHistory } from './request.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'compaction-basic': { kind: 'compaction-basic' } & ContextFormed
+  }
+}
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 import type {
   BasicCompactionConfig,
@@ -383,7 +388,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   private noticeMessage(text: string, summary: string): UserMessage {
     return createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: COMPACT_ANSWER_PLUGIN, form: 'notice', summary },
+      source: { kind: COMPACT_ANSWER_KIND, form: 'notice', summary },
     })
   }
 

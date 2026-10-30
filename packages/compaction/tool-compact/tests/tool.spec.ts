@@ -13,6 +13,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { COMPACT_TOOL_NAME } from '../src/request.ts'
 import * as tool from '../src/index.ts'
@@ -29,19 +30,24 @@ async function setup(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(tool)
   return ctx
 }
 
 let counter = 0
-function call(ctx: Context, args: unknown, agent: Agent = agentWithSession()) {
-  return ctx.tools.execute({
+async function call(ctx: Context, args: unknown, agent: Agent = agentWithSession()) {
+  const batch = await ctx.tools.execute({
     signal: SIGNAL,
-    callId: ToolCallId(`compact-${++counter}`),
-    name: COMPACT_TOOL_NAME,
-    arguments: args,
+    calls: [{
+      type: 'tool-call',
+      id: ToolCallId(`compact-${++counter}`),
+      name: COMPACT_TOOL_NAME,
+      arguments: JSON.stringify(args),
+    }],
     agent,
   })
+  return batch.results[0]!.result
 }
 
 function textOf(result: { content: { type: string; text?: string }[] }): string {
@@ -92,7 +98,7 @@ describe('dsh-tool-compact', () => {
     await call(ctx, { focus: 'anything' }, agent)
     // The backend reads the `tool/call` this execution came from. A tool that
     // also appended its own event would need an invariant and a format member.
-    expect(agent.session.events).toHaveLength(0)
+    expect(agent.session.snapshotEvents()).toHaveLength(0)
   })
 
 

@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { COMPACT_TOOL_NAME, pendingCompactionRequest } from '../src/request.ts'
 
@@ -32,7 +33,7 @@ function request(session: Session, value: number, focus?: string): number {
   return session.append('tool/call', {
     turn: value,
     step: 1,
-    callId: ToolCallId(`call-${serial}-${session.events.length}`),
+    callId: ToolCallId(`call-${serial}-${session.seq}`),
     name: COMPACT_TOOL_NAME,
     arguments: argumentsJson,
   }).seq
@@ -42,13 +43,14 @@ function request(session: Session, value: number, focus?: string): number {
 function answer(session: Session, plugin = 'compaction-basic'): void {
   session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: 'Compaction not started: fixture.' }],
-    source: { kind: 'plugin', plugin, form: 'notice', summary: 'compaction declined' },
+    // A kind this package does not declare: the fold must fall through it.
+    source: { kind: plugin, form: 'notice', summary: 'compaction declined' } as MessageSource,
   }), { surfaceOp: 'append' })
 }
 
 /** Append a compaction transaction opener. */
 function compactionStarts(session: Session, value: number): void {
-  session.append('compaction/start', { compactionId: `c-${session.events.length}` as never, turn: value })
+  session.append('compaction/start', { compactionId: `c-${session.seq}` as never, turn: value })
 }
 
 describe('pendingCompactionRequest', () => {

@@ -10,7 +10,7 @@
 # `thresholdRatio` 0.99 so automatic pressure compaction cannot race the
 # request.
 - id: llm-deepseek
-  name: '@deepseek-ai/dsh-llm-deepseek'
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
   disabled: true
   config:
     models:
