@@ -569,6 +569,7 @@
       "@deepseek-ai/dsh-tool-bash": ["./packages/shell/tool-bash/src"],
       "@deepseek-ai/dsh-tool-bash-persistent": ["./packages/shell/tool-bash-persistent/src"],
       "@deepseek-ai/dsh-tool-compact": ["./packages/compaction/tool-compact/src"],
+      "@deepseek-ai/dsh-tool-compact/request": ["./packages/compaction/tool-compact/src/request.ts"],
       "@deepseek-ai/dsh-tool-cordis": ["./packages/extensions/tool-cordis/src"],
       "@deepseek-ai/dsh-tool-executor-native": ["./packages/core/tool-executor-native/src"],
       "@deepseek-ai/dsh-tool-executor-ptc": ["./packages/core/tool-executor-ptc/src"],

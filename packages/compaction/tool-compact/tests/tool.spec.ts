@@ -10,20 +10,32 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { COMPACT_TOOL_NAME } from '../src/request.ts'
 import * as tool from '../src/index.ts'
 
 const SIGNAL = new AbortController().signal
 
-/** A parent Agent backed by a real Session, so the call has a real log. */
-function agentWithSession(id = 'compact-request'): Agent {
-  const session = Session.create(SessionId(id))
-  return { id: SessionId(id), session } as unknown as Agent
+/**
+ * A real Agent over a real Session, because `tools.execute` takes the live
+ * object and the suite should not fabricate one. The loop stays unmounted: no
+ * step runs, so the call needs the agent itself and nothing above it.
+ */
+async function agentWithSession(id = 'compact-request'): Promise<Agent> {
+  const ctx = new Context()
+  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  const handle = await ctx.agents.create({
+    sessionId: SessionId(id),
+    agentOptions: { provider: 'test-provider', model: 'test-model' },
+  })
+  return handle.agent
 }
 
 async function setup(): Promise<Context> {
@@ -36,7 +48,7 @@ async function setup(): Promise<Context> {
 }
 
 let counter = 0
-async function call(ctx: Context, args: unknown, agent: Agent = agentWithSession()) {
+async function call(ctx: Context, args: unknown, agent?: Agent) {
   const batch = await ctx.tools.execute({
     signal: SIGNAL,
     calls: [{
@@ -45,7 +57,7 @@ async function call(ctx: Context, args: unknown, agent: Agent = agentWithSession
       name: COMPACT_TOOL_NAME,
       arguments: JSON.stringify(args),
     }],
-    agent,
+    agent: agent ?? await agentWithSession(),
   })
   return batch.results[0]!.result
 }
@@ -94,7 +106,7 @@ describe('dsh-tool-compact', () => {
 
   it('appends nothing to the log, because the call itself is the request', async () => {
     const ctx = await setup()
-    const agent = agentWithSession()
+    const agent = await agentWithSession()
     await call(ctx, { focus: 'anything' }, agent)
     // The backend reads the `tool/call` this execution came from. A tool that
     // also appended its own event would need an invariant and a format member.

@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -65,14 +65,19 @@ function meterStub(options: {
     measure(session): TokenMeasurement {
       const totalTokens = options.readings[Math.min(index, options.readings.length - 1)] ?? 0
       index += 1
-      const toolSeqs = session.snapshotEvents().filter(event => event.type === 'tool/result').map(event => event.seq)
+      const events = session.snapshotEvents()
+      const toolSeqs = events.filter(event => event.type === 'tool/result').map(event => event.seq)
       return {
+        logRevision: SessionLogOffset(events.length),
+        baseline: { kind: 'estimated', tokens: totalTokens },
+        surfaceDeltaTokens: 0,
         totalTokens,
-        nodes: toolSeqs.map((seq, position) => ({
-          seq,
-          tokens: options.toolPrices?.[position] ?? 100,
-        })),
-      } as unknown as TokenMeasurement
+        surfaceTokens: totalTokens,
+        nodes: toolSeqs.map((seq, position) => {
+          const tokens = options.toolPrices?.[position] ?? 100
+          return { seq, tokens, heuristicTokens: tokens }
+        }),
+      }
     },
   }
 }

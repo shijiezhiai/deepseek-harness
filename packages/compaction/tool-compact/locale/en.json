@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Compaction request tool",
+    "description": "Let the model ask for compaction at the next step instead of waiting for automatic pressure to force it."
+  }
+}

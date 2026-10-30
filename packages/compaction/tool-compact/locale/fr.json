@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Outil de demande de compaction",
+    "description": "Permettre à l’IA de demander une compaction à l’étape suivante au lieu d’attendre que la pression automatique l’impose."
+  }
+}
