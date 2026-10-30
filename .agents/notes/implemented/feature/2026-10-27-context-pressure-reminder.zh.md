@@ -37,5 +37,5 @@ DSH 从不告诉模型它下一步会占用多少上下文。token meter 每一�
 - 每个工具步一次 `measure()`，且仅在发生工具步时——没有工具调用的轮次什么都不发布，因为纯文本轮次本来也没给模型留下采取行动的机会。
 - 去抖意味着日志量跟随上下文增长而不是步数；在默认 `minDeltaRatio` 下，一段很长但稳定的步骤序列记录的消息会少得多。
 - 截断单位和精度是配置项（`unit`、`precision`），部署可以选原始计数以便机器解析，而不是缩写形式。
-- compaction 与本 guard 都读 token meter，也都不拥有它。compaction 决定压力下删除什么（[调用后合并 Agent Note](../architecture/2026-07-10-after-call-compaction-pressure-and-overflow-recovery.zh.md)）；本 guard 只报告数字，因此两者从不规定同一份策略。meter 含义的未来变更会同时影响两者，而这正是重点：它们在构造上就「压力是什么」达成一致。
+- compaction 与本 guard 都读 token meter，也都不拥有它。compaction 决定压力下删除什么（[调用后合并 Agent Note](../../archived/architecture/2026-07-10-after-call-compaction-pressure-and-overflow-recovery.md)）；本 guard 只报告数字，因此两者从不规定同一份策略。meter 含义的未来变更会同时影响两者，而这正是重点：它们在构造上就「压力是什么」达成一致。
 - guard 不在 assistant 消息与其自身工具结果之间运行，因此某步的工具把上下文撑爆的情况只在下一步才显现。要补上这个缺口需要在工具流水线之外再加一个 surface 生产者，本次范围未包含。

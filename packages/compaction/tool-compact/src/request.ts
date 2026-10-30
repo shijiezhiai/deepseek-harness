@@ -87,6 +87,9 @@ function isAnswerNotice(event: { type: string; data: unknown }): boolean {
 export function pendingCompactionRequest(session: Session): CompactionRequest | undefined {
   let pending: CompactionRequest | undefined
   let answeredThisTurn = false
+  // Whether a request is still pending depends on which tool calls and
+  // compactions came before it, so the fold reads the sequence.
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of session.snapshotEvents()) {
     switch (event.type) {
       case 'tool/call': {

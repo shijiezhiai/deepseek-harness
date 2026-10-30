@@ -38,6 +38,10 @@ export function turnCompactionHistory(session: Session, turn: number): TurnCompa
   let compactions = 0
   let servedRequests = 0
   let openRequest = false
+  // Answering a request is order between a tool call and the compaction that
+  // followed it, so the fold needs the turn's full sequence rather than one
+  // projected value.
+  // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   for (const event of session.snapshotEvents()) {
     if (event.type === 'tool/call') {
       if (event.data.turn === turn && event.data.name === COMPACT_TOOL_NAME && !openRequest) {

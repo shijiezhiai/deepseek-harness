@@ -100,7 +100,6 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：注册 `compact_context`、校验输入、呈现 |
 | [`src/request.ts`](src/request.ts) | 日志折叠：找出未作答的请求，并在轮边界令其退休 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴随文件（没有本包自有的持久事件可断言；认领账本私有于单个监听器） |
 
 </details>
 

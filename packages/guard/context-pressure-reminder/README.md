@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The harness measures the request it is about to send on every step, and until now only compaction consumed that number: the model learned its context was full when compaction deleted the middle of its history. `dsh-context-pressure-reminder` gives the model the number before that happens. After each tool step it appends one line to the next step's context — `[context: ~48.2k tokens]`, plus a window-relative percentage when the routed model publishes a context window — so the model can read less, write findings to a file instead of into the transcript, or delegate, while there is still room. Once the remaining headroom is narrower than one more large tool result, it appends a warning to the step it is about to take instead, so the model can finish a unit of work and write findings to a file before the window runs out. Both messages are advice: they name no compaction threshold and never block a tool call.
+The harness measures every request it sends, but until now only compaction consumed that number: the model learned its context was full when compaction deleted the middle of its history. This package hands the number over first. After each tool step it appends `[context: ~48.2k tokens]`, with a window-relative percentage when the routed model publishes one, so the model can read less or write findings to a file while there is still room. Once the headroom is narrower than one more large tool result, it warns before that step. Both messages are advice and never block a call.
 
 ## Table of Contents
 
@@ -132,7 +132,6 @@ Parallel calls in one step share one reading — the debounce is keyed per agent
 | [`src/pressure.ts`](src/pressure.ts) | Pure rendering and debounce decisions |
 | [`src/nudge.ts`](src/nudge.ts) | Pure band sizing, the nudge decision, and its rendering |
 | [`src/internal.ts`](src/internal.ts) | Shared internal types |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant: both baselines are private to one listener) |
 
 </details>
 

@@ -729,7 +729,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-compaction-basic`
 
 - `inject`: `llm` · `tokenMeter` · `sessions`
-- `source`: [`packages/compaction/compaction-basic/src/types.ts:40`](../packages/compaction/compaction-basic/src/types.ts)
+- `source`: [`packages/compaction/compaction-basic/src/types.ts:58`](../packages/compaction/compaction-basic/src/types.ts)
 
 ```ts config-catalog
 /** Basic compaction configuration with an optional exact-target policy table. */
@@ -738,6 +738,14 @@ export interface BasicCompactionConfig extends CompactionPolicyConfig {
   modelPolicies?: ModelCompactPolicyConfig[]
   /** Enable automatic step-boundary pressure and overflow-recovery listeners. Defaults to `true`. */
   auto?: boolean
+  /**
+   * Whether a model-requested compaction is served at all. Defaults to `true`
+   * when this backend sees `compact_context` calls; set false to leave requests
+   * unanswered in compositions that keep the tool mounted for other reasons.
+   */
+  serveRequests?: boolean
+  /** Limits on serving model requests; see {@link RequestPolicyConfig}. */
+  requestPolicy?: RequestPolicyConfig
 }
 
 /** Policy fields shared by the default policy and exact model overrides. */
@@ -769,6 +777,18 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
   /** Exact routed model id to match within `provider`. */
   model: string
 }
+
+/** Policy for serving a model-requested compaction. */
+export interface RequestPolicyConfig {
+  /**
+   * Lowest occupancy, as a fraction of the window, at which a model request is
+   * served. Below it compaction would discard working state the model still
+   * needs, so the request is declined. Defaults to `0.10`.
+   */
+  minContextRatio?: number
+  /** Model-served compactions allowed per turn. Defaults to `2`. */
+  maxPerTurn?: number
+}
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-compaction-basic -->
 
@@ -792,6 +812,50 @@ export interface ToolResultPruneConfig {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-compaction-tool-result-pruner -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-context-pressure-reminder -->
+<a id="deepseek-aidsh-context-pressure-reminder"></a>
+
+## `@deepseek-ai/dsh-context-pressure-reminder`
+
+- `source`: [`packages/guard/context-pressure-reminder/src/index.ts:41`](../packages/guard/context-pressure-reminder/src/index.ts)
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema plus the
+ * load-time checks in `apply` (misconfiguration fails loud: a negative
+ * precision, an unknown unit, or a negative ratio throws at plugin load, never
+ * a silent fall-back).
+ */
+export interface Config {
+  /** Whether readings are published at all (default `true`). */
+  enabled?: boolean
+  /** Fractional digits kept on a `k`-unit count (default `1`). */
+  precision?: number
+  /** `k` abbreviates thousands; `raw` prints the integer (default `k`). */
+  unit?: 'k' | 'raw'
+  /**
+   * Smallest relative occupancy change worth a fresh reading; `0` publishes on
+   * every step (default `0.02`). Also governs how often a nudge repeats inside
+   * the danger band.
+   */
+  minDeltaRatio?: number
+  /** Danger band sizing; see {@link DangerBandConfig}. */
+  nudge?: {
+    /** Whether the pre-step nudge is installed at all (default `true`). */
+    enabled?: boolean
+    /** Multiplier applied to the largest recent tool result (default `2`). */
+    observationMultiplier?: number
+    /** Lower bound on the band as a fraction of the window (default `0.1`). */
+    minBandRatio?: number
+    /** Upper bound on the band as a fraction of the window (default `0.5`). */
+    maxBandRatio?: number
+    /** Recent tool results the band is sized from (default `3`). */
+    observationWindow?: number
+  }
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-context-pressure-reminder -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
 <a id="deepseek-aidsh-cordis-host-runner"></a>
@@ -4923,6 +4987,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-subprocess-ssh` | `ssh` | [`packages/ssh/subprocess-ssh/src/index.ts`](../packages/ssh/subprocess-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-terminal` | — | [`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts) |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | `tools` | [`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts) |
+| `@deepseek-ai/dsh-tool-compact` | `tools` | [`packages/compaction/tool-compact/src/index.ts`](../packages/compaction/tool-compact/src/index.ts) |
 | `@deepseek-ai/dsh-tool-cordis` | `tools` · `cordisInspect` | [`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-tool-executor-native` | `tools` | [`packages/core/tool-executor-native/src/index.ts`](../packages/core/tool-executor-native/src/index.ts) |
 | `@deepseek-ai/dsh-tool-schedule` | `tools` | [`packages/schedule/tool-schedule/src/index.ts`](../packages/schedule/tool-schedule/src/index.ts) |

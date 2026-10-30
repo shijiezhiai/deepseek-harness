@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-10-28-context-pressure-nudge.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-28-context-pressure-nudge.md
-2026-10-28-context-pressure-nudge.md: 78d655d2a975910f568df5a897cbae5e956c1a5c
-2026-10-28-context-pressure-nudge.zh.md: 013f6754c82f795d8f1237b7f8580c304e3b417a
+/agent-note-a-danger-band-sized-by-the-observations-the-session-produced:
+  en: 0c2db55cf791478c
+  zh: 5c2e78bb75f4ad5a
+/agent-note-a-danger-band-sized-by-the-observations-the-session-produced/problem:
+  en: 155053a37abc1cca
+  zh: 229d47eb4d6cafb1
+/agent-note-a-danger-band-sized-by-the-observations-the-session-produced/decision:
+  en: 80831635ed4adcbe
+  zh: 0ed73b529a014fa7
+/agent-note-a-danger-band-sized-by-the-observations-the-session-produced/alternatives-considered:
+  en: bc7a6af951c71d5c
+  zh: cad394328506861b
+/agent-note-a-danger-band-sized-by-the-observations-the-session-produced/consequences:
+  en: a54a7b76114bfee0
+  zh: f62dedefa47f4160

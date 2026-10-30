@@ -100,7 +100,6 @@ A request is refused before the summarizer is touched when the measured occupanc
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `compact_context` registration, input validation, presentation |
 | [`src/request.ts`](src/request.ts) | Log fold that finds an unanswered request and retires it at turn boundaries |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no package-owned durable event to assert; the claim ledger is private to one listener) |
 
 </details>
 

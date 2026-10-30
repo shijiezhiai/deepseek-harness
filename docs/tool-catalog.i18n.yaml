@@ -9,8 +9,8 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 4d42222acd39d083
-  zh: 8153a5065bf2ebd6
+  en: a854aac92f2b6731
+  zh: 319783d05ae9f29d
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -300,8 +300,14 @@
   en: 2eac7360ba68b1bd
   zh: b5d676bf288c245e
 /tool-schema-catalog/deepseek-ai-dsh-experimental-tool-agent-team/wait-agent:
-  en: e70c77a45832bb28
-  zh: 7d03bec294b65452
+  en: 830a8b8654d59dfe
+  zh: c38a1d6e6b3bf49d
+/tool-schema-catalog/deepseek-ai-dsh-tool-compact:
+  en: 57c2986f39365a90
+  zh: 57c2986f39365a90
+/tool-schema-catalog/deepseek-ai-dsh-tool-compact/compact-context:
+  en: 6ee2b92aa53336f7
+  zh: d2eb52d80471e519
 /tool-schema-catalog/deepseek-ai-dsh-tool-todo:
   en: dea62d26fb18ff68
   zh: dea62d26fb18ff68

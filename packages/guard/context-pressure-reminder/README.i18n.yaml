@@ -1,6 +1,70 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/guard/context-pressure-reminder/README.md
-README.md: 27b2fcf78c2a95c413ba21ffaf300262d4811dd8
-README.zh.md: e68ea55b346741e2bcfcee9cbeb56f291f9ec814
+/:
+  en: 187762ca0e51bb98
+  zh: 819b6f6398410f42
+/deepseek-ai-dsh-context-pressure-reminder:
+  en: 68090c48b094847c
+  zh: fd7b7265eaed7511
+/deepseek-ai-dsh-context-pressure-reminder/summary:
+  en: bc9f33701952e333
+  zh: a0eeaad4bb51f6f5
+/deepseek-ai-dsh-context-pressure-reminder/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: f8845381c3b23f66
+/deepseek-ai-dsh-context-pressure-reminder/use-this-package:
+  en: 8daeaf6924428078
+  zh: 41fdbc8ca40489f4
+/deepseek-ai-dsh-context-pressure-reminder/use-this-package/when-to-choose-it:
+  en: c6d492f0dbc98458
+  zh: 48ea680bcb245e3b
+/deepseek-ai-dsh-context-pressure-reminder/use-this-package/setting-the-debounce-and-rendering:
+  en: f1f92cbc04cbcaaf
+  zh: ee0fb8c4347a70cb
+/deepseek-ai-dsh-context-pressure-reminder/use-this-package/setting-the-danger-band:
+  en: d8ff3ce28b1f923e
+  zh: b3c48daebf1af876
+/deepseek-ai-dsh-context-pressure-reminder/use-this-package/what-you-get:
+  en: 4b29a409cc9101c2
+  zh: a4fd24fa792840fb
+/deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 6eb78656420aa552
+/deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation/design-philosophy:
+  en: dab75afb675f3077
+  zh: a730c7ca528b0527
+/deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation/where-it-hooks:
+  en: b47b772c7345a710
+  zh: 96b40b5c2c40c269
+/deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation/source-map:
+  en: 04a0fa9558d3b7e0
+  zh: 94e7b9100d459595
+/deepseek-ai-dsh-context-pressure-reminder/further-exploration:
+  en: e963e8fd41df07a1
+  zh: fbac2db911f6c0a2
+/deepseek-ai-dsh-context-pressure-reminder/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading:
+  en: 273f8f8ac7084c7b
+  zh: b054b6aa6b02f82c
+/deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/what-the-model-sees:
+  en: 0223db561d6d75da
+  zh: 36ffbb64137847a8
+/deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/what-the-model-sees/the-reading:
+  en: 9b1236a0a1fa6480
+  zh: c68bd7aa59bc480d
+/deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/token-effect:
+  en: 5e9fc8d5622ad029
+  zh: 2e15949563c00e61
+/deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/kv-cache-effect:
+  en: f94826b61ba90d70
+  zh: 44e0d54e31bdddfe
+/deepseek-ai-dsh-context-pressure-reminder/known-limitations-and-deferred-work:
+  en: 62496b54516d2ae3
+  zh: 06e1d4fea48970eb
+/deepseek-ai-dsh-context-pressure-reminder/known-limitations-and-deferred-work/dev-note:
+  en: d34bfcb6861491df
+  zh: 1a5640c8e67e4246

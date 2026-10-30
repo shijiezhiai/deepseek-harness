@@ -132,7 +132,6 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 | [`src/pressure.ts`](src/pressure.ts) | 纯渲染与去抖判定 |
 | [`src/nudge.ts`](src/nudge.ts) | 纯带宽计算、提醒判定及其渲染 |
 | [`src/internal.ts`](src/internal.ts) | 共享内部类型 |
-| [`src/invariant.ts`](src/invariant.ts) | invariant 伴生文件（无运行时 invariant：两个基线都是单个监听器的私有状态） |
 
 </details>
 
