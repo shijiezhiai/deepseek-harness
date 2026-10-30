@@ -188,7 +188,7 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
   },
   'persistent-tools': {
     environment: { DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT },
-    expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'], working_directory: [] },
+    expectedTools: { bash: ['command'], compact_context: [], str_replace_editor: ['command', 'path'], working_directory: [] },
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
     runtimeContext: {
