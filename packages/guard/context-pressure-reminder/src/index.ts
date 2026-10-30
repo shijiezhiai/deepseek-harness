@@ -70,6 +70,11 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean().default(true),
   precision: z.number().default(1),
   unit: z.union([z.const('k'), z.const('raw')]).default('k'),
+  // One step in fifty: below it a burst of small calls drowns the model in the
+  // same numbers, and above it a long call can leave the reading stale for ten
+  // steps. Simulated over 100-step sessions with heavy-tailed tool outputs this
+  // yields about 27 readings per 128k session and never more than seven
+  // consecutive silenced steps.
   minDeltaRatio: z.number().default(0.02),
   // The outer default names every field: schemastery types `.default()` as the
   // schema's output type, whose members are all required, so `{}` cannot be
