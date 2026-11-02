@@ -41,6 +41,7 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
     minDeltaRatio: 0.02   # publish when the reading moved ≥2% since the LAST PUBLISHED one
     unit: k               # k → ~48.2k ; raw → ~48200
     precision: 1          # digits after the point for the k unit
+    maxTurnsInReading: 8  # newest turns listed; 0 disables the split
     enabled: true
 ```
 
@@ -49,6 +50,7 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 | `minDeltaRatio` | `0.02` | 值得新发一条消息的变动比例；`0` 表示每步都发布 |
 | `unit` | `k` | `k` 渲染为 `~48.2k`，`raw` 渲染为 `~48200` |
 | `precision` | `1` | `k` 形式的小数位 |
+| `maxTurnsInReading` | `8` | 分轮明细列出的最近轮数；更早的折叠成一个 `earlier` 数字。`0` 表示不显示分轮 |
 | `enabled` | `true` | 总开关 |
 
 ### 设置危险带宽
@@ -73,7 +75,7 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 | `nudge.observationMultiplier` | `2` | 对最大保留工具结果的乘数 |
 | `nudge.observationWindow` | `3` | 有多少条近期工具结果参与定尺度 |
 
-非法配置会在加载时失败——负的 `minDeltaRatio`、负数或非整数的 `precision`、未知的 `unit`、不在 `(0, 1]` 内的带宽比例、高于 `maxBandRatio` 的 `minBandRatio`、负的 `observationMultiplier`、非整数的 `observationWindow` 都会直接抛错，而不是悄悄改变行为。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-context-pressure-reminder)记录了每个可接受值。
+非法配置会在加载时失败——负的 `minDeltaRatio`、负数或非整数的 `precision`、未知的 `unit`、负数或非整数的 `maxTurnsInReading`、不在 `(0, 1]` 内的带宽比例、高于 `maxBandRatio` 的 `minBandRatio`、负的 `observationMultiplier`、非整数的 `observationWindow` 都会直接抛错，而不是悄悄改变行为。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-context-pressure-reminder)记录了每个可接受值。
 
 ### 你会得到什么
 
@@ -112,7 +114,7 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 - **只报告，不规定。** guard 发布一次测量。战术（压缩、裁剪、委托、停止读取）属于模型与 compaction 自己的策略；一个把它们写死的 guard，不过是换了个名字的 `thresholdRatio`。
 - **折叠进下游决定。** 监听器先调用 `next()`，再追加到返回值上，所以下游监听器的 `block` 依然阻断，下游的 `accept` 会保留它自己的 contexts，而读数排在它们之前。
 - **通过共享 meter 测量。** `ctx.tokenMeter.measure()` 就是 compaction 用的那次调用，因此两者对「压力」的理解天然一致。
-- **加载时失败得响。** `precision`、`minDeltaRatio`、`unit` 以及每个带宽字段都在 `apply` 中校验。
+- **加载时失败得响。** `precision`、`minDeltaRatio`、`unit`、`maxTurnsInReading` 以及每个带宽字段都在 `apply` 中校验。
 
 ### 挂载位置
 
@@ -154,18 +156,19 @@ harness 每一步都会测量它即将发出的请求，而在此之前只有 co
 
 #### 模型看到什么
 
-工具步让测量值变动后，多出一条 user 角色消息。第一行是路由未公布窗口时的纯计数读数；第二行在路由公布窗口后加上占比：
+工具步改变了测量之后，模型会多收到一条 user 角色的消息：路由没有公布窗口时只有计数，公布了窗口时是计数加占比，而当至少两轮仍占着 surface 时再追加一份分轮明细。只剩一轮时不会出现明细——各轮数字只是在复述总量，而仓库里 163 个录制会话从未离开第一轮，所以短形态同时也是最常见的那一种。轮号是绝对的，因此被 compaction 清空的那一轮会直接不再出现，而不是让其余轮号前移；超过 `maxTurnsInReading` 的轮次折叠成一个 `earlier` 数字，让打印出来的数字仍然可加。压缩检查点记在发起压缩的那一轮上，因此那一轮可能显得很大；摘要确实占着预算。
 
 ##### 读数
 
 ```markdown
 [context: ~48.2k tokens]
 [context: ~48.2k/200k tokens · 24%]
+[context: ~48.2k/200k tokens · 24% · turns 1-3: 6.0k 12.4k 21.8k]
 ```
 
 #### Token 影响
 
-每条已发布读数约十个 token，每个跨过 `minDeltaRatio` 的步一次。不新增工具 schema，正常调用文本也不变。
+每条已发布读数约十个 token，每个跨过 `minDeltaRatio` 的步一次；分轮明细每列一轮约多六个字符，因此填满的读数约三十个 token。不新增工具 schema，正常调用文本也不变。
 
 #### KV Cache 影响
 

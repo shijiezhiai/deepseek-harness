@@ -840,6 +840,12 @@ export interface Config {
    * the danger band.
    */
   minDeltaRatio?: number
+  /**
+   * How many newest turns one reading prints (default `8`). Older turns
+   * collapse into a single `earlier` figure, so the printed numbers keep adding
+   * up. Set `0` to print no per-turn split at all.
+   */
+  maxTurnsInReading?: number
   /** Danger band sizing; see {@link DangerBandConfig}. */
   nudge?: {
     /** Whether the pre-step nudge is installed at all (default `true`). */

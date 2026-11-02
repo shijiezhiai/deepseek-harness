@@ -41,6 +41,7 @@ The defaults publish a reading whenever the measurement has moved; tune how much
     minDeltaRatio: 0.02   # publish when the reading moved ≥2% since the LAST PUBLISHED one
     unit: k               # k → ~48.2k ; raw → ~48200
     precision: 1          # digits after the point for the k unit
+    maxTurnsInReading: 8  # newest turns listed; 0 disables the split
     enabled: true
 ```
 
@@ -49,6 +50,7 @@ The defaults publish a reading whenever the measurement has moved; tune how much
 | `minDeltaRatio` | `0.02` | Fraction of change that earns a new message; `0` publishes every step |
 | `unit` | `k` | `k` renders `~48.2k`, `raw` renders `~48200` |
 | `precision` | `1` | Decimal places in the `k` form |
+| `maxTurnsInReading` | `8` | Newest turns the split lists; older ones fold into one `earlier` figure. `0` prints no split |
 | `enabled` | `true` | Master switch |
 
 ### Setting the danger band
@@ -73,7 +75,7 @@ The reading is a fact on every step; the nudge is a warning near the end. The ba
 | `nudge.observationMultiplier` | `2` | Multiplier on the largest retained tool result |
 | `nudge.observationWindow` | `3` | How many recent tool results size the band |
 
-Invalid configuration fails at load — a negative `minDeltaRatio`, a negative or non-integer `precision`, an unknown `unit`, a band ratio outside `(0, 1]`, a `minBandRatio` above `maxBandRatio`, a negative `observationMultiplier`, or a non-integer `observationWindow` throws instead of silently changing behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-context-pressure-reminder) documents every accepted value.
+Invalid configuration fails at load — a negative `minDeltaRatio`, a negative or non-integer `precision`, an unknown `unit`, a negative or non-integer `maxTurnsInReading`, a band ratio outside `(0, 1]`, a `minBandRatio` above `maxBandRatio`, a negative `observationMultiplier`, or a non-integer `observationWindow` throws instead of silently changing behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-context-pressure-reminder) documents every accepted value.
 
 ### What you get
 
@@ -154,18 +156,19 @@ Parallel calls in one step share one reading — the debounce is keyed per agent
 
 #### What the model sees
 
-One extra user-role message after a tool step that moved the measurement. The first line is the count-only reading a route without a published window gets; the second adds the share once the route publishes one:
+One extra user-role message after a tool step that moved the measurement: the count alone when the route publishes no window, the count and its share when it does, and a per-turn split appended once at least two turns still hold surface content. The split is withheld for a single turn, where the sizes would only restate the total; 163 of the repository's recorded sessions never leave their first turn, so the short form is also the common one. Turn numbers are absolute, so a turn that compaction emptied stops appearing rather than shifting the others, and turns beyond `maxTurnsInReading` collapse into one `earlier` figure that keeps the printed numbers additive. A compaction checkpoint is billed to the turn that ran the compaction, which can make that one turn look large; the summary really does occupy the budget.
 
 ##### The reading
 
 ```markdown
 [context: ~48.2k tokens]
 [context: ~48.2k/200k tokens · 24%]
+[context: ~48.2k/200k tokens · 24% · turns 1-3: 6.0k 12.4k 21.8k]
 ```
 
 #### Token effect
 
-Roughly ten tokens per published reading, once per step that crossed `minDeltaRatio`. No tool schema is added and no normal-call text changes.
+Roughly ten tokens per published reading, once per step that crossed `minDeltaRatio`; the per-turn split adds about six characters per listed turn, so a fully populated reading costs roughly thirty. No tool schema is added and no normal-call text changes.
 
 #### KV Cache effect
 

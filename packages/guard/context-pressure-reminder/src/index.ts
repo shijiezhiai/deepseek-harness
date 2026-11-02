@@ -27,7 +27,7 @@ import { retainObservations } from './internal.ts'
 import type { SessionReadingState } from './internal.ts'
 import { dangerNeed, renderNudge, shouldNudge } from './nudge.ts'
 import type { DangerBandConfig } from './nudge.ts'
-import { renderReading, shouldPublish } from './pressure.ts'
+import { DEFAULT_MAX_TURNS_IN_READING, renderReading, shouldPublish, turnSizes } from './pressure.ts'
 import type { ReadingFormat } from './pressure.ts'
 
 export const name = 'context-pressure-reminder'
@@ -51,6 +51,12 @@ export interface Config {
    * the danger band.
    */
   minDeltaRatio?: number
+  /**
+   * How many newest turns one reading prints (default `8`). Older turns
+   * collapse into a single `earlier` figure, so the printed numbers keep adding
+   * up. Set `0` to print no per-turn split at all.
+   */
+  maxTurnsInReading?: number
   /** Danger band sizing; see {@link DangerBandConfig}. */
   nudge?: {
     /** Whether the pre-step nudge is installed at all (default `true`). */
@@ -76,6 +82,10 @@ export const Config: z<Config> = z.object({
   // yields about 27 readings per 128k session and never more than seven
   // consecutive silenced steps.
   minDeltaRatio: z.number().default(0.02),
+  // Eight entries keep a reading near forty characters while still separating
+  // the turns a model would weigh against each other; the omitted older turns
+  // collapse into one additive `earlier` figure rather than disappearing.
+  maxTurnsInReading: z.number().default(DEFAULT_MAX_TURNS_IN_READING),
   // The outer default names every field: schemastery types `.default()` as the
   // schema's output type, whose members are all required, so `{}` cannot be
   // stated here. Inner defaults still let a composition override just one field.
@@ -107,6 +117,8 @@ interface ResolvedConfig {
   readonly format: ReadingFormat
   /** Smallest relative change worth a fresh reading or a repeated nudge. */
   readonly minDeltaRatio: number
+  /** How many newest turns one reading prints; `0` prints no split. */
+  readonly maxTurns: number
   /** Whether the pre-step nudge is installed. */
   readonly nudgeEnabled: boolean
   /** Band sizing, resolved to concrete numbers. */
@@ -124,6 +136,12 @@ function resolveFormat(config: Config): ResolvedConfig {
   const minDeltaRatio = config.minDeltaRatio as number
   if (!Number.isFinite(minDeltaRatio) || minDeltaRatio < 0) {
     throw new Error(`context-pressure-reminder: invalid minDeltaRatio ${minDeltaRatio} — must be a finite number >= 0`)
+  }
+  const maxTurns = config.maxTurnsInReading as number
+  if (!Number.isInteger(maxTurns) || maxTurns < 0) {
+    throw new Error(
+      `context-pressure-reminder: invalid maxTurnsInReading ${maxTurns} — must be an integer >= 0`,
+    )
   }
   const nudge = config.nudge as NonNullable<Config['nudge']>
   const observationMultiplier = nudge.observationMultiplier as number
@@ -154,6 +172,7 @@ function resolveFormat(config: Config): ResolvedConfig {
   return {
     format: { precision, unit },
     minDeltaRatio,
+    maxTurns,
     nudgeEnabled: nudge.enabled as boolean,
     band: { observationMultiplier, minBandRatio, maxBandRatio, observationWindow },
   }
@@ -166,7 +185,7 @@ function resolveFormat(config: Config): ResolvedConfig {
  */
 export function apply(ctx: Context, config: Config): void {
   if (!config.enabled) return
-  const { format, minDeltaRatio, nudgeEnabled, band } = resolveFormat(config)
+  const { format, minDeltaRatio, maxTurns, nudgeEnabled, band } = resolveFormat(config)
 
   // The meter is looked up rather than injected: an `inject` declaration would
   // make a composition that forgot the meter silently load no guard at all,
@@ -195,6 +214,7 @@ export function apply(ctx: Context, config: Config): void {
         publishedTokens: undefined,
         recentToolSeqs: [],
         announcedTokens: undefined,
+        turnStarts: [],
       }
       states.set(session, state)
     }
@@ -204,10 +224,18 @@ export function apply(ctx: Context, config: Config): void {
   // Track the owning step so one step publishes at most one reading: parallel
   // tool calls run post-execute once each, and a per-step count is the only
   // boundary this hook can observe. The same listener keeps the recent tool
-  // results the danger band is sized from.
+  // results the danger band is sized from, and the turn boundaries the reading
+  // splits its total by.
   ctx.on('session/event', (session, event) => {
     if (event.type === 'step/start') {
       stateOf(session).step = { turn: event.data.turn, step: event.data.step }
+      return
+    }
+    if (event.type === 'turn/start') {
+      const state = stateOf(session)
+      // A turn number is never reused within one session, so appending keeps
+      // this list ascending without consulting its contents.
+      state.turnStarts = [...state.turnStarts, { turn: event.data.turn, seq: event.seq }]
       return
     }
     if (event.type !== 'tool/result') return
@@ -252,8 +280,12 @@ export function apply(ctx: Context, config: Config): void {
     if (!shouldPublish(state.publishedTokens, measurement.totalTokens, minDeltaRatio)) return undefined
     state.publishedTokens = measurement.totalTokens
     const contextWindow = session.requestContext()?.contextWindow
+    const turns = turnSizes(measurement.nodes, state.turnStarts)
     return createUserMessage({
-      content: [{ type: 'text', text: renderReading({ totalTokens: measurement.totalTokens, contextWindow, format }) }],
+      content: [{
+        type: 'text',
+        text: renderReading({ totalTokens: measurement.totalTokens, contextWindow, format, turns, maxTurns }),
+      }],
       source: { ...PLUGIN_SOURCE, form: 'notice', summary: 'context pressure' },
     })
   }

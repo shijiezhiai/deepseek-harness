@@ -23,6 +23,16 @@ export interface SessionReadingState {
   recentToolSeqs: SessionSeq[]
   /** Occupancy the last nudge announced while inside the band, else undefined. */
   announcedTokens: number | undefined
+  /**
+   * Ascending turns with the sequence number each `turn/start` was appended at.
+   *
+   * Only the starts are retained: a surface node belongs to the newest start at
+   * or before its own sequence number, so the per-turn split needs the
+   * boundaries and not one entry per surface event. Retained across compaction
+   * on purpose — a turn whose nodes were all shadowed simply matches no node
+   * and drops out of the split.
+   */
+  turnStarts: { readonly turn: number; readonly seq: SessionSeq }[]
 }
 
 /**

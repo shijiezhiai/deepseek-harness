@@ -34,7 +34,7 @@
 
 | 维度 | CLM | DSH 现状 | 结论 |
 |---|---|---|---|
-| 上下文表示 | 可变文本文件 | 严格校验的 append-only log + surface（`surfaceOp`、`sourceEventSeqs` provenance、tool-pairing 平衡） | DSH 的约束更强，是**有意**的 |
+| 上下文表示 | 可变文本文件 | 严格校验的 append-only log + surface（`surfaceOp`、`sourceEventSeqs` 来源记录、tool-pairing 平衡） | DSH 的约束更强，是**有意**的 |
 | 谁决定压缩 | 模型 | 规则（`thresholdRatio` 0.8）+ `/compact` 手动 + 溢出重试 | 差异真实存在 |
 | 摘要生成 | 模型自己写，就地替换 | LLM 8-section 工程纪要，`replace` 整段 | DSH 更结构化、更省调用 |
 | 预算可见性 | 每次工具结果附 `[context: ~N/M tokens]` + `OVER` 标记 | **模型完全不知道自己的预算**（`system-prompt` 不提，`token-meter` 的 `pressureTokens` 只给插件用） | **DSH 缺** |

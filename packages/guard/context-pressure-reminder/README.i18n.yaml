@@ -21,11 +21,11 @@
   en: c6d492f0dbc98458
   zh: 48ea680bcb245e3b
 /deepseek-ai-dsh-context-pressure-reminder/use-this-package/setting-the-debounce-and-rendering:
-  en: f1f92cbc04cbcaaf
-  zh: ee0fb8c4347a70cb
+  en: a8b156d9604cffbd
+  zh: 6f695c29e20d5538
 /deepseek-ai-dsh-context-pressure-reminder/use-this-package/setting-the-danger-band:
-  en: d8ff3ce28b1f923e
-  zh: b3c48daebf1af876
+  en: 83d01ec358fd0547
+  zh: b2241678afe01ea8
 /deepseek-ai-dsh-context-pressure-reminder/use-this-package/what-you-get:
   en: 4b29a409cc9101c2
   zh: a4fd24fa792840fb
@@ -34,7 +34,7 @@
   zh: 6eb78656420aa552
 /deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation/design-philosophy:
   en: dab75afb675f3077
-  zh: a730c7ca528b0527
+  zh: e0dbeee78a2ad327
 /deepseek-ai-dsh-context-pressure-reminder/understand-the-implementation/where-it-hooks:
   en: b47b772c7345a710
   zh: 96b40b5c2c40c269
@@ -51,14 +51,14 @@
   en: 273f8f8ac7084c7b
   zh: b054b6aa6b02f82c
 /deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/what-the-model-sees:
-  en: 0223db561d6d75da
-  zh: 36ffbb64137847a8
+  en: c18cf2736306731d
+  zh: 6c1b65f0e1ba5e55
 /deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/what-the-model-sees/the-reading:
   en: 9b1236a0a1fa6480
   zh: c68bd7aa59bc480d
 /deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/token-effect:
-  en: 5e9fc8d5622ad029
-  zh: 2e15949563c00e61
+  en: dddb7248b145aa1f
+  zh: 461ee989bac808ed
 /deepseek-ai-dsh-context-pressure-reminder/model-experience/context-pressure-reading/kv-cache-effect:
   en: f94826b61ba90d70
   zh: 44e0d54e31bdddfe

@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, type Session, type SessionEvent, type SessionSeq } from '@deepseek-ai/dsh-session'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -36,17 +36,44 @@ function multiCall(calls: { id: string; name: string; args: object }[]): StreamC
 }
 
 /**
- * Meter stand-in: the guard only calls `measure()`. Each call advances through
+ * Meter stand-in: the guard calls `measure()` and reads `totalTokens` plus the
+ * priced `nodes` the per-turn split is summed from. Each call advances through
  * the scripted series, repeating the last value once it is exhausted so a
  * single stub serves any number of readings.
+ *
+ * `nodePrices` reshapes the measurement into one node per turn: it receives the
+ * turn starts the session has logged so far and returns each turn's price, so
+ * the emitted nodes carry the real sequence numbers a measurement would.
  */
-function meterStub(readings: number[]): { measure(): TokenMeasurement } {
+function meterStub(
+  readings: number[],
+  nodePrices?: (turnSeqs: readonly SessionSeq[]) => readonly number[],
+): { measure(session: Session): TokenMeasurement } {
   let index = 0
   return {
-    measure(): TokenMeasurement {
+    measure(session: Session): TokenMeasurement {
       const totalTokens = readings[Math.min(index, readings.length - 1)] ?? 0
       index += 1
-      return { totalTokens } as TokenMeasurement
+      const measured = (nodes: TokenMeasurement['nodes']): TokenMeasurement => ({
+        logRevision: SessionLogOffset(0),
+        baseline: { kind: 'none', tokens: 0 },
+        surfaceDeltaTokens: totalTokens,
+        totalTokens,
+        surfaceTokens: totalTokens,
+        nodes,
+      })
+      if (nodePrices === undefined) return measured([])
+      const turnSeqs = [...session.snapshotEvents()]
+        .filter((event): event is SessionEvent<'turn/start'> => event.type === 'turn/start')
+        .map(event => event.seq)
+      const prices = nodePrices(turnSeqs)
+      // One node per turn, priced by its index, so the split the guard derives
+      // is exactly the prices handed in.
+      const nodes = turnSeqs.map((seq, position) => {
+        const tokens = prices[position] ?? 0
+        return { seq, tokens, heuristicTokens: tokens }
+      })
+      return measured(nodes)
     },
   }
 }
@@ -66,6 +93,7 @@ async function harness(options: {
   config?: ContextPressureReminder.Config
   readings?: number[]
   mountMeter?: boolean
+  nodePrices?: (turnSeqs: readonly SessionSeq[]) => readonly number[]
 } = {}): Promise<HarnessResult> {
   const ctx = new Context()
   const warns: string[] = []
@@ -81,7 +109,7 @@ async function harness(options: {
     async execute() { return [{ type: 'text', text: 'ok' }] },
   }))
   if (mountMeter) {
-    const meter = meterStub(options.readings ?? [10_000])
+    const meter = meterStub(options.readings ?? [10_000], options.nodePrices)
     await ctx.plugin({
       name: 'token-meter-stub',
       apply(inner: Context) { inner.provide('tokenMeter', meter as never) },
@@ -118,6 +146,24 @@ async function run(ctx: Context, script: StreamChunk[][]): Promise<{ agent: Agen
 /** The abbreviated count from each reading, for terse series assertions. */
 function counts(found: string[]): (string | undefined)[] {
   return found.map(text => text.match(/~([\d.]+)/)?.[1])
+}
+
+/**
+ * Drive one fresh agent through one followup per entry of `turns`, waiting for
+ * idle between them, so each scripted group after the first belongs to a new
+ * turn. Each turn's script must end its turn (a text response, not a tool call).
+ */
+async function runTurns(ctx: Context, turns: StreamChunk[][][]): Promise<{ agent: Agent; notices: string[] }> {
+  // One entry per followup; each holds that turn's per-request scripts, which
+  // is exactly the flat sequence MockAdapter replays.
+  const adapter = new MockAdapter(turns.flat())
+  ctx.llm.registerAdapter(['mock'], adapter)
+  const agent = await ctx.agentLoop.create(SessionId(`a${Math.random().toString(36).slice(2)}`), { provider: 'mock', model: 'mock' })
+  for (const [index] of turns.entries()) {
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: `go ${index + 1}` }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+  }
+  return { agent, notices: notices(agent) }
 }
 
 describe('one reading per step', () => {
@@ -194,6 +240,60 @@ describe('rendering', () => {
     const { ctx } = await harness({ config: { unit: 'raw', precision: 0 }, readings: [48_200] })
     const { notices: found } = await run(ctx, [toolCallResponse('c1', 'probe', {}), textResponse('done')])
     expect(found).toEqual(['[context: ~48200 tokens]'])
+  })
+})
+
+describe('per-turn split on the reading', () => {
+  it('adds the split once a second turn owns part of the surface', async () => {
+    // Turn 1 prices one node, turn 2 prices two, so the surfaced split shows
+    // both turns ascending and no `earlier` fold.
+    const { ctx } = await harness({
+      readings: [10_000, 20_000],
+      nodePrices: turnSeqs => turnSeqs.length === 1 ? [10_000] : [6_000, 14_000],
+    })
+    const { notices: found } = await runTurns(ctx, [
+      [toolCallResponse('c1', 'probe', {}), textResponse('one')],
+      [toolCallResponse('c2', 'probe', {}), textResponse('two')],
+    ])
+    // Turn 1's reading has one turn on the surface, so it stays in the old form.
+    expect(found[0]).toBe('[context: ~10.0k tokens]')
+    expect(found[1]).toBe('[context: ~20.0k tokens · turns 1-2: 6.0k 14.0k]')
+  })
+
+  it('prints no split when the meter reports no priced nodes', async () => {
+    const { ctx } = await harness({ readings: [10_000, 20_000] })
+    const { notices: found } = await runTurns(ctx, [
+      [toolCallResponse('c1', 'probe', {}), textResponse('one')],
+      [toolCallResponse('c2', 'probe', {}), textResponse('two')],
+    ])
+    expect(found[1]).toBe('[context: ~20.0k tokens]')
+  })
+
+  it('keeps the newest turns listed and folds older ones into one additive figure', async () => {
+    const { ctx } = await harness({
+      config: { maxTurnsInReading: 2 },
+      readings: [10_000, 20_000, 30_000],
+      nodePrices: (turnSeqs) => {
+        const perTurn = [5_000, 10_000, 15_000]
+        return turnSeqs.map((_seq, position) => perTurn[position] as number)
+      },
+    })
+    const { notices: found } = await runTurns(ctx, [
+      [toolCallResponse('c1', 'probe', {}), textResponse('one')],
+      [toolCallResponse('c2', 'probe', {}), textResponse('two')],
+      [toolCallResponse('c3', 'probe', {}), textResponse('three')],
+    ])
+    expect(found[2]).toBe('[context: ~30.0k tokens · earlier turn 1: 5.0k · turns 2-3: 10.0k 15.0k]')
+  })
+
+  it('rejects a non-integer maxTurnsInReading at load', async () => {
+    await expect(harness({ config: { maxTurnsInReading: 1.5 } }))
+      .rejects.toThrow(/invalid maxTurnsInReading/u)
+  })
+
+  it('rejects a negative maxTurnsInReading at load', async () => {
+    await expect(harness({ config: { maxTurnsInReading: -1 } }))
+      .rejects.toThrow(/invalid maxTurnsInReading/u)
   })
 })
 
