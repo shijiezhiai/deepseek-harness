@@ -1,0 +1,9 @@
+# Live composition for the model-requested compaction snapshot: the shipped base
+# bundle mounts both `tool-compact` and `compaction-basic`, so this only lowers
+# the pressure threshold out of the way. The request is served by the sentinel
+# check, not by crossing `thresholdRatio`, so the step boundary must not compact
+# on its own before the model asks.
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.99

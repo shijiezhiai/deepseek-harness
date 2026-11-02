@@ -12,6 +12,7 @@ import type {
   ModelCompactPolicyConfig,
   ResolvedCompactSpec,
   ResolvedConfig,
+  ResolvedRequestPolicy,
   ResolvedRetention,
   ResolvedTargetPolicy,
 } from './types.ts'
@@ -21,6 +22,12 @@ const DEFAULT_THRESHOLD_RATIO = 0.8
 
 /** Default verbatim-tail fraction for every routed model. */
 const DEFAULT_RETAIN_RATIO = 0.16
+
+/** Default occupancy floor for serving a model-requested compaction. */
+const DEFAULT_REQUEST_MIN_CONTEXT_RATIO = 0.1
+
+/** Default model-served compactions per turn. */
+const DEFAULT_REQUEST_MAX_PER_TURN = 2
 
 /** Fields shared by top-level defaults and exact-target overrides. */
 const POLICY_CONFIG_KEYS = [
@@ -40,6 +47,14 @@ const BASIC_COMPACT_CONFIG_KEYS: ReadonlySet<string> = new Set([
   ...POLICY_CONFIG_KEYS,
   'modelPolicies',
   'auto',
+  'serveRequests',
+  'requestPolicy',
+])
+
+/** Complete `requestPolicy` key set. */
+const REQUEST_POLICY_KEYS: ReadonlySet<string> = new Set([
+  'minContextRatio',
+  'maxPerTurn',
 ])
 
 /** Complete exact-target override key set. */
@@ -75,6 +90,10 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
   const headroomTokens = config.headroomTokens ?? 65_536
   const maxTokens = config.maxTokens ?? headroomTokens
   assertPositiveInteger('BasicCompactionConfig.maxTokens (explicit or from headroomTokens)', maxTokens)
+  if (config.serveRequests !== undefined && typeof config.serveRequests !== 'boolean') {
+    throw new Error('BasicCompactionConfig: serveRequests must be a boolean')
+  }
+  const requestPolicy = resolveRequestPolicy(config.requestPolicy)
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO
   const retention = resolveRetention(config, { retainRatio: DEFAULT_RETAIN_RATIO })
   validateRatioRetention(thresholdRatio, retention, 'BasicCompactionConfig')
@@ -106,7 +125,41 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
     modelPolicies,
     auto: config.auto ?? true,
+    serveRequests: config.serveRequests ?? true,
+    requestPolicy,
   })
+}
+
+/**
+ * Validate the model-request policy block.
+ * @param configured - untrusted `requestPolicy` value after Loader normalization.
+ * @returns the resolved policy, defaulted field by field.
+ */
+function resolveRequestPolicy(configured: unknown): ResolvedRequestPolicy {
+  if (configured === undefined) {
+    return {
+      minContextRatio: DEFAULT_REQUEST_MIN_CONTEXT_RATIO,
+      maxPerTurn: DEFAULT_REQUEST_MAX_PER_TURN,
+    }
+  }
+  if (!isUnknownRecord(configured)) {
+    throw new Error('BasicCompactionConfig: requestPolicy must be an object')
+  }
+  validateKeys(configured, REQUEST_POLICY_KEYS, 'BasicCompactionConfig: requestPolicy')
+  if (configured.minContextRatio !== undefined) {
+    assertRatio('BasicCompactionConfig: requestPolicy.minContextRatio', configured.minContextRatio)
+  }
+  if (configured.maxPerTurn !== undefined) {
+    assertNonNegativeInteger('BasicCompactionConfig: requestPolicy.maxPerTurn', configured.maxPerTurn)
+  }
+  return {
+    minContextRatio: typeof configured.minContextRatio === 'number'
+      ? configured.minContextRatio
+      : DEFAULT_REQUEST_MIN_CONTEXT_RATIO,
+    maxPerTurn: typeof configured.maxPerTurn === 'number'
+      ? configured.maxPerTurn
+      : DEFAULT_REQUEST_MAX_PER_TURN,
+  }
 }
 
 /**

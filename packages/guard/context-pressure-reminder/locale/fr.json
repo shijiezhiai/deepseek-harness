@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Rappel de pression du contexte",
+    "description": "Indiquer à l’IA l’occupation de son contexte après chaque appel d’outil, afin qu’elle puisse converger avant que la compaction automatique ne décide."
+  }
+}

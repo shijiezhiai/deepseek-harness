@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Lembrete de pressão de contexto",
+    "description": "Informe à IA quanto do contexto está ocupado após cada chamada de ferramenta, para que ela possa convergir antes da compactação automática decidir."
+  }
+}

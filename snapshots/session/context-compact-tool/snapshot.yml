@@ -1,0 +1,9 @@
+version: 1
+scenario: context-compact-tool
+profile: headless
+composition: context-compact-tool
+recording: authored
+header:
+  class: context-compact-tool
+  pin: true
+  changes: 1

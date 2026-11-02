@@ -28,8 +28,10 @@ const SUMMARY_CLOSE_TAG = '</compacted-summary>'
  * Keeping the conversation's own system prompt, tools, and message prefix in
  * front of it makes the auxiliary call a genuine prefix of the last routed
  * request, so the provider's KV cache is reused instead of invalidated.
+ *
+ * Exported so tests can assert the directive reaches the provider unchanged.
  */
-const COMPACTION_INSTRUCTION = [
+export const COMPACTION_INSTRUCTION = [
   'You are now acting as a compaction engine for this AI coding assistant. Condense the conversation ABOVE into a structured checkpoint that lets another model resume the work with no loss of essential context.',
   '',
   'Output EXACTLY the Markdown structure below: keep every section, in order. Use terse bullets, not prose paragraphs. Write "(none)" for an empty section — never drop a section.',
@@ -81,6 +83,27 @@ export interface SummarizationInput {
   readonly tools?: readonly ToolSchema[]
   /** The derived system head, when present, followed by the shadowed region in surface order. */
   readonly messages: readonly Message[]
+  /** The model's own statement of what this summary must preserve, when it requested the compaction. */
+  readonly focus?: string
+}
+
+/**
+ * Turn the model's requested focus into a trailing directive block.
+ *
+ * The block follows {@link COMPACTION_INSTRUCTION} instead of being spliced into
+ * it: a separate content block leaves every byte of the fixed directive intact,
+ * so a provider that caches prefixes still hits the same cached text. The block
+ * also bounds the focus's authority — the structure and exact-string rules above
+ * outrank it, so a focus cannot be read as permission to drop file paths.
+ */
+function focusDirective(focus: string): string {
+  return [
+    'Attention — the assistant requested this compaction and named what the summary must preserve:',
+    '',
+    focus,
+    '',
+    'Cover that material inside the sections above. It selects what to emphasize; it does not override the output structure or the requirement to preserve exact identifiers.',
+  ].join('\n')
 }
 
 /** Safe summary content plus the exact auxiliary call envelope recorded with it. */
@@ -142,12 +165,11 @@ export async function summarizeWithLlm(
   }
 
   const assembler = new BlockAssembler()
+  const directive: ContentBlock[] = [{ type: 'text', text: COMPACTION_INSTRUCTION }]
+  if (input.focus !== undefined) directive.push({ type: 'text', text: focusDirective(input.focus) })
   const messages: RequestMessage[] = [
     ...input.messages,
-    deepFreeze({
-      role: 'user',
-      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
-    }),
+    deepFreeze({ role: 'user', content: directive }),
   ]
   const options: GenerateOptions = {
     provider: target.provider,

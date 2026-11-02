@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Context pressure reminder",
+    "description": "Tell the model how full its context is after each tool call, so it can converge before automatic compaction takes the decision."
+  }
+}

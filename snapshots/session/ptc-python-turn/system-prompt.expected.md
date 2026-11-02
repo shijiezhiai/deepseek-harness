@@ -9,7 +9,7 @@ Verify your work by running the code or tests. Keep answers brief and factual.
 
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
 
-Use the read tool — not shell commands like cat, sed, head, or tail — to inspect text files. Use offset and limit to read a line range or continue a large file.
+Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.
 
 Read an existing file before overwriting it with write (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 
@@ -31,7 +31,7 @@ Start independent delegations with `subagent` or `subagent_fork` together in one
 
 ## Writing code for run_code
 
-`run_code` takes two required arguments: `description`, a short summary of what the program does, and `code`, the program to execute. At run time exactly two of the names declared below are bound: `tools` and `ToolCallError`. Everything else is a STATIC STUB describing argument and return types — in particular the `TypedDict` classes do NOT exist at run time, so build arguments as plain `dict`/`list` JSON values: `await tools.name({"field": 1})`, never `FooArgs(field=1)`, which raises `NameError`. Inside the program:
+`run_code` takes two required arguments: `code`, the program to execute, and `description`, a short summary of what the program does. At run time exactly two of the names declared below are bound: `tools` and `ToolCallError`. Everything else is a STATIC STUB describing argument and return types — in particular the `TypedDict` classes do NOT exist at run time, so build arguments as plain `dict`/`list` JSON values: `await tools.name({"field": 1})`, never `FooArgs(field=1)`, which raises `NameError`. Inside the program:
 
 - Call tools as `await tools.name(args)` — subscript access for exotic, reserved, or underscore-leading names: `await tools["my-tool"](args)`. Every call resolves to the tool's typed canonical JSON value (each method's return type below). Tool arguments must be lossless JSON.
 - A FAILED tool call raises `ToolCallError`, whose `toolName` identifies the failed tool and whose message is human-readable — wrap in `try/except` to handle and continue.
@@ -104,6 +104,14 @@ class BashOutput3(TypedDict):
     stderr: BashOutput3Stderr
     sandbox: NotRequired[BashOutput3Sandbox]
 
+class CompactContextArgs(TypedDict):
+    # One sentence naming what the summary must preserve. Omit when nothing specific matters.
+    focus: NotRequired[str]
+    # Additional keys beyond those declared are allowed.
+
+class CompactContextOutput(TypedDict):
+    kind: Literal["requested"]
+
 class CreateGoalArgs(TypedDict):
     # The concrete completion objective inferred from the direct human request.
     objective: str
@@ -151,14 +159,6 @@ class EditOutput(TypedDict):
     path: str
     before: str
     after: str
-
-class ExitPlanModeArgs(TypedDict):
-    # The complete plan, as markdown, starting with a # heading that names it.
-    plan: str
-    # Additional keys beyond those declared are allowed.
-
-class ExitPlanModeOutput(TypedDict):
-    approved: bool
 
 class GetGoalOutput1(TypedDict):
     goal: None
@@ -476,6 +476,7 @@ class WebSearchOutputSources(TypedDict):
     url: str
     title: NotRequired[str]
     snippet: NotRequired[str]
+    summary: NotRequired[str]
     publishedAt: NotRequired[str]
 
 class WebSearchOutput(TypedDict):
@@ -513,12 +514,12 @@ class WriteOutput(TypedDict):
 class Tools(Protocol):
     async def bash(self, args: BashArgs) -> BashOutput1 | BashOutput2 | BashOutput3:
         """Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; pass `workdir` instead of using `cd`. Managed `$DSH_*` variables expose current harness environment facts. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Provide `description` before `command` in the arguments. Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `${VAR:?}`. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way."""
+    async def compact_context(self, args: CompactContextArgs) -> CompactContextOutput:
+        """Replace the finished part of this conversation with one summary, freeing context space while keeping the work that matters. Use it when earlier turns hold detail you will not need again — before the context fills up. Compaction runs before your next step, not immediately: this call only records the request, and the harness may decline it. Pass `focus` naming what the summary must preserve when that matters (decisions already made, files you are editing, facts you will need again)."""
     async def create_goal(self, args: CreateGoalArgs) -> CreateGoalOutput1 | CreateGoalOutput2:
         """Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work."""
     async def edit(self, args: EditArgs) -> EditOutput:
         """Edit an existing UTF-8 text file by replacing literal text."""
-    async def exit_plan_mode(self, args: ExitPlanModeArgs) -> ExitPlanModeOutput:
-        """Use only in plan mode. Present your plan for the user's review and, on approval, leave plan mode. The user may approve (carry out the plan from your next step) or keep planning — their feedback comes back in the tool result; revise and present again."""
     async def get_goal(self, args: dict[str, Any]) -> GetGoalOutput1 | GetGoalOutput2:
         """Read the current session goal, including the id and revision that update_goal requires."""
     async def glob(self, args: GlobArgs) -> GlobOutput:

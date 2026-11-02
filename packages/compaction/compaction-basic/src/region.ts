@@ -61,6 +61,8 @@ interface CompactionTransactionOptions {
   readonly flush?: () => Promise<void>
   /** Manual command that initiated this transaction, when present. */
   readonly sourceCommandId?: CommandId
+  /** The requesting model's statement of what the summary must preserve, when it asked for this compaction. */
+  readonly focus?: string
 }
 
 interface CompactionEntryState {
@@ -219,7 +221,7 @@ export async function compactSurfaceRegion(
   let stage: TransactionFailure['stage'] = 'summary'
 
   try {
-    const prepared = prepareCompaction(dependencies, session, selection)
+    const prepared = prepareCompaction(dependencies, session, selection, options.focus)
     const summarized = await summarizeCompaction(
       dependencies,
       prepared,
@@ -362,6 +364,7 @@ function prepareCompaction(
   dependencies: RegionDependencies,
   session: Session,
   selection: SurfaceSelection,
+  focus: string | undefined,
 ): PreparedCompaction {
   const measurement = dependencies.meter.measure(session)
   const selectedNodes = measurement.nodes.slice(selection.startIdx, selection.endIdx + 1)
@@ -379,7 +382,7 @@ function prepareCompaction(
     // route-priced `tokens` instead.
     shadowedTokenCount: selectedNodes.reduce((total, node) => total + node.heuristicTokens, 0),
     shadowedRouteTokenCount: selectedNodes.reduce((total, node) => total + node.tokens, 0),
-    input: buildSummarizationInput(session, selection.shadowedSeqs),
+    input: buildSummarizationInput(session, selection.shadowedSeqs, focus),
   }
 }
 
@@ -404,7 +407,7 @@ async function summarizeCompaction(
       assertStable(dependencies, agent.session, prepared)
       if (!dependencies.recover(error, agent, prepared.shadowedSeqs, signal)) throw error
       prepared = prepareCompaction(dependencies, agent.session,
-        validateSurfaceRegion(agent.session, prepared.start, prepared.end))
+        validateSurfaceRegion(agent.session, prepared.start, prepared.end), prepared.input.focus)
     }
   }
   const checkpointMessage = createUserMessage({
@@ -539,11 +542,13 @@ function completeCompaction(
  * message, contributes no leading system message.
  * @param session - session supplying the surface head, request header, and per-node projection.
  * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
+ * @param focus - the requesting model's statement of what the summary must preserve.
  * @returns the replayed conversation prefix to condense.
  */
 function buildSummarizationInput(
   session: Session,
   shadowedSeqs: readonly SessionSeq[],
+  focus: string | undefined,
 ): SummarizationInput {
   const header = session.requestHeader()
   // shadowedSeqs are current surface seqs, so the surface has a node 0.
@@ -559,6 +564,7 @@ function buildSummarizationInput(
   return {
     ...header?.tools === undefined ? {} : { tools: header.tools },
     messages: system === null ? regionMessages : [system, ...regionMessages],
+    ...focus === undefined ? {} : { focus },
   }
 }
 

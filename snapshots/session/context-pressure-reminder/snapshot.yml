@@ -1,0 +1,8 @@
+version: 1
+scenario: context-pressure-reminder
+profile: headless
+composition: context-pressure-reminder
+recording: authored
+header:
+  class: context-pressure-reminder
+  pin: true

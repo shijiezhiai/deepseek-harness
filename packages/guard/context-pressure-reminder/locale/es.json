@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Recordatorio de presión de contexto",
+    "description": "Indique a la IA cuánto contexto ocupa tras cada llamada de herramienta, para que pueda converger antes de que la compactación automática decida."
+  }
+}

@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-11-02-model-chosen-compaction-range.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-11-02-model-chosen-compaction-range.md
+/agent-note-model-chosen-compaction-range:
+  en: 65acf993dfa09149
+  zh: 68c5fcb1ffcb376f
+/agent-note-model-chosen-compaction-range/problem:
+  en: 546fed4c0c904c36
+  zh: 6e62bec9066913c0
+/agent-note-model-chosen-compaction-range/proposal:
+  en: 01a3db9f325892ba
+  zh: 407c008baa75a375
+/agent-note-model-chosen-compaction-range/proposal/interface-change:
+  en: f1f9aa58d16cc89f
+  zh: cf1be028d63c8e7a
+/agent-note-model-chosen-compaction-range/proposal/resolution:
+  en: ed5c667182ae268e
+  zh: 41d748a60e8f64a6
+/agent-note-model-chosen-compaction-range/proposal/tail-retention:
+  en: 4b4cafffa2c68469
+  zh: 6629106b9fd206d1
+/agent-note-model-chosen-compaction-range/proposal/what-needs-no-change:
+  en: dc577dec9569e7ed
+  zh: c037f3cba63b2aa6
+/agent-note-model-chosen-compaction-range/implementation-order:
+  en: 0194f60ee79c061d
+  zh: f347d3ee48fe2459
+/agent-note-model-chosen-compaction-range/alternatives-considered:
+  en: e06511a4988f698a
+  zh: c2af9b92f27eb50a
+/agent-note-model-chosen-compaction-range/acceptance-criteria:
+  en: 2ac19a73011ccc4f
+  zh: ca9ca97c7fbb1df9
+/agent-note-model-chosen-compaction-range/risks:
+  en: 22ac68df8eb27019
+  zh: 6d5ca8fc99b682d9

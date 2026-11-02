@@ -1,0 +1,15 @@
+# Live composition for the danger-band nudge snapshot: the shipped base bundle
+# mounts the guard and token-meter, so this patch narrows the band and keeps
+# automatic compaction out of the way. The band is sized from remaining
+# headroom, so the scenario's replay route publishes a small capacity rather
+# than fabricating occupancy; `thresholdRatio: 0.99` stops compaction from
+# rewriting the surface the band is measured against.
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  config:
+    thresholdRatio: 0.99
+
+- id: context-pressure-reminder
+  name: '@deepseek-ai/dsh-context-pressure-reminder'
+  config:
+    minDeltaRatio: 0

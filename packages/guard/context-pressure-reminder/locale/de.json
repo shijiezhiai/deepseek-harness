@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Kontextdruck-Erinnerung",
+    "description": "Teilen Sie der KI nach jedem Toolaufruf mit, wie voll ihr Kontext ist, damit sie sich zusammenfassen kann, bevor die automatische Kompaktierung entscheidet."
+  }
+}
