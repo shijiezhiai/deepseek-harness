@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>项目工作区</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header class="side-head">
+      <h1>项目</h1>
+      <button id="btn-new" class="icon" title="新建项目">+</button>
+    </header>
+    <div id="project-list" class="project-list"></div>
+    <footer class="side-foot">
+      <button id="btn-refresh" class="ghost">刷新</button>
+    </footer>
+  </aside>
+  <main id="main">
+    <div id="welcome" class="welcome">
+      <h2>项目工作区</h2>
+      <p>左侧选择一个项目，或点右上角 <strong>+</strong> 新建。每个项目是一个目录，包含目标、记忆、指令、会话时间线、看板、成员、资料库与本地资产引用。</p>
+    </div>
+    <section id="project-view" hidden>
+      <header class="proj-head">
+        <div class="proj-title">
+          <h2 id="proj-name"></h2>
+          <span id="proj-status" class="badge"></span>
+        </div>
+        <p id="proj-goal" class="goal"></p>
+        <nav id="tabs" class="tabs"></nav>
+        <div class="proj-actions">
+          <button id="btn-edit-goal" class="ghost">改目标</button>
+          <button id="btn-rename" class="ghost">重命名</button>
+          <button id="btn-archive" class="ghost"></button>
+          <button id="btn-delete" class="danger">删除</button>
+        </div>
+      </header>
+      <div id="panels"></div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
