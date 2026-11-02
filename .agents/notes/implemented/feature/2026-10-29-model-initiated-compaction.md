@@ -34,7 +34,7 @@ The third gate is why the figures stay honest without the backend reading `thres
 
 `CompactionEngine` still exposes only `compactIfNeeded`, `compactNow`, `compactRegion`, and `onRound`. The backend implements request serving as a private method on `BasicCompactionEngine`, reached through the same `agent/pre-step` listener that already handles pressure. A composition that mounts `tool-compact` without a backend that serves it keeps the tool visible but never gets an answer — which is why `serveRequests` exists to turn the behaviour off explicitly rather than silently.
 
-`compactRegion` is reused unchanged; a request cannot currently pass a `focus` through to the summarizer, so `focus` is recorded on the tool call and honored in a later change rather than silently dropped.
+`compactRegion` keeps its signature. The serving path calls `compactSurfaceRegion` directly with a transaction option, the way `compactNow` already did, because `focus` is a field only a model request produces and the abstract method has no way to carry it. The summarizer receives it as `SummarizationInput.focus` and emits it as its own trailing content block, so the fixed instruction stays byte-identical for prefix caching.
 
 ## Alternatives considered
 
@@ -51,11 +51,12 @@ The third gate is why the figures stay honest without the backend reading `thres
 - A model can now reclaim context mid-turn without a human, and reads a notice either way.
 - `compaction-basic` gains `serveRequests` and `requestPolicy`; both are validated config, changeable from `cordis.yml`.
 - The `compact_context` tool appears in every composition mounting `tool-compact`, so tool-schema snapshots change once.
-- `focus` is accepted and recorded but not yet delivered to the summarizer.
+- `focus` reaches the summarizer and steers it, bounded by a directive that says it selects emphasis without overriding the output structure or the exact-identifier rules.
 
 ## Testing
 
 - `packages/compaction/compaction-basic/tests/gate.spec.ts`: the floor is inclusive, one token below it refuses, `maxPerTurn: 0` refuses the first request, and an unknown window serves without an occupancy figure.
 - `packages/compaction/tool-compact/tests/request.spec.ts`: the log fold claims one request per turn, retires it when the turn ends, ignores other tools, tolerates malformed arguments, and does not re-open an answered request.
 - `packages/compaction/tool-compact/tests/tool.spec.ts`: presentation carries the focus label when present and omits `rawInput` otherwise.
-- `packages/compaction/compaction-basic/tests/request.spec.ts`: real-loop cases for compaction, one-shot refusal, the already-compacted gate reached by a pressure compaction, and `serveRequests: false`.
+- `packages/compaction/compaction-basic/tests/request.spec.ts`: real-loop cases for compaction, one-shot refusal, the already-compacted gate reached by a pressure compaction, `serveRequests: false`, and that a requested focus reaches the summarizer while an absent one stays absent.
+- `packages/compaction/compaction-basic/tests/compaction-basic.spec.ts`: the focus directive is its own content block after an unchanged fixed instruction, and no focus sends the instruction alone.

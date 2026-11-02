@@ -51,6 +51,8 @@ class RecordingEngine extends BasicCompactionEngine {
 class ScriptedAdapter extends LlmAdapter {
   readonly requests: RequestMessage[][] = []
   script: ('text' | 'compact')[] = []
+  /** JSON argument text every `compact` entry sends. */
+  compactArguments = '{}'
 
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return Promise.resolve({
@@ -73,7 +75,7 @@ class ScriptedAdapter extends LlmAdapter {
           type: 'tool-call',
           id: ToolCallId(`compact-${this.requests.length}`),
           name: COMPACT_TOOL_NAME,
-          arguments: '{}',
+          arguments: this.compactArguments,
         },
       }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
@@ -179,6 +181,37 @@ describe('a model compaction request', () => {
     expect(loop.engine.calls).toHaveLength(1)
     expect(loop.agent.session.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(true)
     expect(seenText(loop).some(text => text.startsWith('Compaction finished:'))).toBe(true)
+  })
+
+  it('hands the requested focus to the summarizer', async () => {
+    const loop = await harness(LOW_FLOOR)
+    await seed(loop)
+    loop.adapter.compactArguments = JSON.stringify({
+      focus: 'the retry budget and the exact command that failed',
+    })
+    loop.adapter.script.push('compact', 'text')
+    loop.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'tidy up' }],
+      source: { kind: 'user' },
+    }))
+    await loop.agent.whenIdle()
+
+    expect(loop.engine.calls).toHaveLength(1)
+    expect(loop.engine.calls[0]?.focus).toBe('the retry budget and the exact command that failed')
+  })
+
+  it('asks for no focus when the request carried none', async () => {
+    const loop = await harness(LOW_FLOOR)
+    await seed(loop)
+    loop.adapter.script.push('compact', 'text')
+    loop.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'tidy up' }],
+      source: { kind: 'user' },
+    }))
+    await loop.agent.whenIdle()
+
+    expect(loop.engine.calls).toHaveLength(1)
+    expect(loop.engine.calls[0]?.focus).toBeUndefined()
   })
 
   it('answers a declined request exactly once, not on every following step', async () => {

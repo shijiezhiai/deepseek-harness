@@ -369,7 +369,22 @@ export class BasicCompactionEngine extends CompactionEngine {
 
     let result: CompactionResult
     try {
-      result = await this.compactRegion(range.start, range.end, agent, signal)
+      // Focus travels straight into the transaction: `compactRegion` is the
+      // abstract surface for callers that own their own range, and it cannot
+      // carry a request that only this policy produces.
+      result = await compactSurfaceRegion(
+        this.regionDependencies(),
+        session,
+        range.start,
+        range.end,
+        agent,
+        {
+          owner: 'current-turn',
+          stability: 'whole-surface',
+          ...request.focus === undefined ? {} : { focus: request.focus },
+        },
+        signal,
+      )
     } catch (error: unknown) {
       return answer(
         `Compaction failed and changed nothing: ${error instanceof Error ? error.message : String(error)}`,

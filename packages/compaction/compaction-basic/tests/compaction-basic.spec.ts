@@ -4,7 +4,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { selectCompactableRange } from '@deepseek-ai/dsh-compaction-basic/src/region.ts'
-import { frameSummary } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
+import { COMPACTION_INSTRUCTION, frameSummary, summarizeWithLlm } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import {
@@ -2555,5 +2555,56 @@ describe('route-priced image pressure', () => {
       .filter(node => result?.shadowedSeqs.includes(node.seq))
       .reduce((total, node) => total + node.heuristicTokens, 0)
     expect(summaryEvent?.data.shadowedTokenCount).toBe(shadowedHeuristic)
+  })
+})
+
+describe('summarizer focus directive', () => {
+  /** Records the request the summarizer streams to the provider. */
+  class RecordingAdapter extends ContextAdapter {
+    readonly last: { messages?: GenerateOptions } = {}
+
+    override async * stream(options?: GenerateOptions): AsyncIterable<StreamChunk> {
+      this.last.messages = options === undefined ? undefined : { messages: [...options.messages] } as GenerateOptions
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'checkpoint' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+  }
+
+  async function summarize(focus: string | undefined): Promise<GenerateOptions['messages']> {
+    const ctx = createContext(1_000)
+    const adapter = new RecordingAdapter(1_000)
+    ctx.llm.registerAdapter(['summary-target'], adapter)
+    const session = new SessionStore(ctx).create(SessionId(`focus-${focus ?? 'none'}`))
+    const input: SummarizationInput = {
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'history' }],
+        source: { kind: 'test' },
+      })],
+      ...focus === undefined ? {} : { focus },
+    }
+    await summarizeWithLlm(ctx, {
+      summarizationProvider: 'summary-target',
+      summarizationModel: 'summary-target',
+      maxTokens: 64,
+    }, input, agent(session))
+    return adapter.last.messages?.messages ?? []
+  }
+
+  it('appends the focus as its own block after an unchanged directive', async () => {
+    const messages = await summarize('keep the retry budget')
+    const directive = messages.at(-1)
+    expect(directive?.role).toBe('user')
+    const blocks = directive?.content ?? []
+    // The fixed directive stays the first block, byte for byte, so a provider
+    // caching this prefix still hits the same cached text.
+    expect(blocks[0]).toEqual({ type: 'text', text: COMPACTION_INSTRUCTION })
+    const focus = blocks[1]
+    expect(focus?.type === 'text' ? focus.text : '').toContain('keep the retry budget')
+  })
+
+  it('sends the directive alone when the request named no focus', async () => {
+    const messages = await summarize(undefined)
+    expect(messages.at(-1)?.content).toEqual([{ type: 'text', text: COMPACTION_INSTRUCTION }])
   })
 })

@@ -34,7 +34,7 @@ harness 里每一次压缩都不是模型发起的。`compaction-basic` 在步�
 
 `CompactionEngine` 仍然只暴露 `compactIfNeeded`、`compactNow`、`compactRegion`、`onRound`。后端把请求服务实现为 `BasicCompactionEngine` 上的私有方法，通过已经处理压力的同一个 `agent/pre-step` 监听器抵达。一个只挂 `tool-compact` 而没有会服务它的后端的组合，工具仍然可见但永远得不到回答——这就是 `serveRequests` 存在的理由：显式关掉行为，而不是悄悄不生效。
 
-`compactRegion` 原样复用；请求目前无法把 `focus` 透传到总结器，所以 `focus` 记录在工具调用上，留待后续变更兑现，而不是悄悄丢弃。
+`compactRegion` 签名不变。服务路径直接调用 `compactSurfaceRegion` 并传一个事务选项，就像 `compactNow` 原本所做的——`focus` 只有模型请求才能产生，抽象方法无处承载它。总结器通过 `SummarizationInput.focus` 收到它，并作为独立的尾部内容块发出，固定指令因此逐字节不变，前缀缓存照旧命中。
 
 ## 考虑过的替代方案
 
@@ -51,11 +51,12 @@ harness 里每一次压缩都不是模型发起的。`compaction-basic` 在步�
 - 模型现在可以在轮中不经人类回收上下文，且无论结果如何都会读到一条通知。
 - `compaction-basic` 新增 `serveRequests` 与 `requestPolicy`；两者都是经校验的配置，可从 `cordis.yml` 改。
 - `compact_context` 会出现在每个挂载 `tool-compact` 的组合里，因此工具 schema 快照会变一次。
-- `focus` 被接受并记录，但尚未送达总结器。
+- `focus` 抵达总结器并引导它，边界由指令明确：只决定强调什么，不覆盖输出结构或精确标识符规则。
 
 ## 测试
 
 - `packages/compaction/compaction-basic/tests/gate.spec.ts`：下限含等号，低一个 token 即拒绝，`maxPerTurn: 0` 拒绝第一次请求，未知窗口时不做占用判断而服务。
 - `packages/compaction/tool-compact/tests/request.spec.ts`：日志折叠每轮只认一次请求，轮结束即退休，忽略其他工具，容忍畸形参数，已作答的请求不会重新打开。
 - `packages/compaction/tool-compact/tests/tool.spec.ts`：呈现层在有 focus 时带上标签，否则不出现 `rawInput`。
-- `packages/compaction/compaction-basic/tests/request.spec.ts`：真实循环覆盖压缩、一次性拒绝、被压力压缩触发的本轮已压缩闸门，以及 `serveRequests: false`。
+- `packages/compaction/compaction-basic/tests/request.spec.ts`：真实循环覆盖压缩、一次性拒绝、被压力压缩触发的本轮已压缩闸门、`serveRequests: false`，以及请求里的 focus 抵达总结器、无 focus 时保持缺席。
+- `packages/compaction/compaction-basic/tests/compaction-basic.spec.ts`：focus 指令是固定指令之后的独立内容块，固定指令逐字节不变；无 focus 时只发固定指令。

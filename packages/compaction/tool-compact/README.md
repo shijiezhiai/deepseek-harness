@@ -32,7 +32,7 @@ Mount the package beside a backend that serves requests. The shipped `dsh` base 
 | Input | Result |
 |---|---|
 | `compact_context()` | The call returns `requested`; condensation runs before the next turn step and the model reads what was folded. |
-| `compact_context({ focus })` | The same, with the focus recorded on the call. A backend that cannot pass a focus through still condenses. |
+| `compact_context({ focus })` | The same, with the focus recorded on the call and forwarded to the summarizer by a backend that supports it. |
 | Nothing worth folding | The request is declined and the model is told why; the conversation is unchanged. |
 
 ### What the model reads
@@ -136,7 +136,7 @@ Discovery costs nothing. The accepted surface replacement invalidates reuse from
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Focus is recorded, not delivered** — `focus` travels on the tool call and reaches presentation, but `compactRegion` cannot yet forward a focus to the summarizer, so the summary is not steered by it.
+- **Focus steers a backend that consumes it** — `focus` travels on the tool call to presentation and to any backend that forwards it; the basic backend passes it to its summarizer as a trailing directive block after the fixed instruction.
 - **Serving requires a backend** — the tool does not condense anything itself; a composition must mount a backend that serves requests.
 - **One request per turn boundary** — a request claimed by a turn that ends before the next step is retired unanswered.
 
@@ -148,7 +148,7 @@ Discovery costs nothing. The accepted surface replacement invalidates reuse from
 
 This Dev Note is working context for maintainers and is explicitly non-authoritative; shipped behavior lives in the sections above, the package code, and the linked Agent Notes.
 
-- **Delivering focus, undecided** — forwarding a focus needs a summarizer input field owned by the backend; the tool already records it.
+- **Focus authority, bounded by design** — the directive sits in its own content block so the fixed instruction stays byte-identical for prefix caching, and it states that it selects what to emphasize without overriding the output structure or exact-identifier rules.
 - **Gate tuning, open** — the `0.10` floor and `2`-per-turn limit are unmeasured starting points, chosen so a request cannot delete the working set or loop.
 
 </details>
