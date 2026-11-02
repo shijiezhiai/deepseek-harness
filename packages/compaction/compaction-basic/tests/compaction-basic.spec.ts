@@ -2561,10 +2561,10 @@ describe('route-priced image pressure', () => {
 describe('summarizer focus directive', () => {
   /** Records the request the summarizer streams to the provider. */
   class RecordingAdapter extends ContextAdapter {
-    readonly last: { messages?: GenerateOptions } = {}
+    sent: GenerateOptions['messages'] = []
 
     override async * stream(options?: GenerateOptions): AsyncIterable<StreamChunk> {
-      this.last.messages = options === undefined ? undefined : { messages: [...options.messages] } as GenerateOptions
+      this.sent = [...options?.messages ?? []]
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'checkpoint' } }
       yield { type: 'finish', reason: { kind: 'stop' } }
@@ -2588,7 +2588,7 @@ describe('summarizer focus directive', () => {
       summarizationModel: 'summary-target',
       maxTokens: 64,
     }, input, agent(session))
-    return adapter.last.messages?.messages ?? []
+    return adapter.sent
   }
 
   it('appends the focus as its own block after an unchanged directive', async () => {
